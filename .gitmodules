@@ -1,0 +1,3 @@
+[submodule "3rd-party/baby-steps"]
+	path = 3rd-party/baby-steps
+	url = git@github.com:aerique/baby-steps.git
