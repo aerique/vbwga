@@ -1,278 +1,306 @@
 ;;;; victory-boogie-woogie-genetic-algorithm.lisp
 ;;;;
-;;;; Functional (as in programming paradigm) rewrite.
-;;;;
-;;;; - avconv -f image2 -i mona-lisa-%06d.bmp -r 12 -s 256x256 mona-lisa.avi
-;;;; - avconv -f image2 -i mona-lisa-%06d.bmp -s 256x256 -vf setpts=0.1*PTS mona-lisa.avi
-;;;;
-;;;; convert-surface, copy-surface & draw-surface don't work (at least when
-;;;; the destination isn't *default-display* but a surface made with
-;;;; create-surface... however draw-surface-at-* does work (with x=0 and y=0)
-;;;;
-;;;; target fitness is 5.0e-8?  seems good from Mona Lisa trials
-;;;;
-;;;; g=330201  f=5.000e-8  for mona-lisa trial
-;;;;
-;;;; alternatives:
-;;;; - voronoi
-;;;; - small circles all the same size, pop=x*y/4
-;;;; - optimize one circle at a time, p=1, accept local maxima
-;;;; - instead of random colours use the histogram of the target as probability
-;;;;
-;;;; Couldn't find 64-bit SDL_gfx.dll so needs 32-bit SBCL and SDL libs.
-;;;;
-;;;; Install libsdl_gfx for transparency.
-;;;;
 ;;;; The painting has been turned 45 degrees clockwise!
+;;;;
+;;;; Where to switch from 0.0-1.0 to 0-max{r,g,b,x,y}?
+;;;;
+;;;; profiling:
+;;;; o (require 'sb-sprof)
+;;;; o (sb-sprof:with-profiling (:report :flat :loop nil :reset t
+;;;;                             :sample-interval 0.001)
+;;;;     <body>)
 
 ;;; Packages
 
-(asdf:oos 'asdf:load-op :eager-future2)
-(asdf:oos 'asdf:load-op :lispbuilder-sdl)
+(in-package :cl)
 
-(in-package :lispbuilder-sdl)
+
+(asdf:oos 'asdf:load-op :eager-future2)
+(rename-package :eager-future2 :eager-future2 '(:ef))
+
+(asdf:oos 'asdf:load-op :png-read)
+(asdf:oos 'asdf:load-op :zpng)
+
+
+(defpackage :victory-boogie-woogie
+  (:nicknames :vbw)
+  (:use :cl))
+
+(in-package :vbw)
 
 
 ;;; Classes
 
-;; A genome is a list containing one or more '(x y radius red green blue)
-;; elements.  x, y, radius, red, green and blue are all floats between 0 and
-;; 1.  These will be translated to coordinates, size and color values when a
-;; drawing is converted to a PNG.
 (defclass drawing ()
   ((fitness :reader fitness :initarg :fitness)
    (genome  :reader genome  :initarg :genome)
-   (surface :reader surface :initarg :surface)))
+   (png     :reader png     :initarg :png)))
 
 
 ;;; Methods
 
 (defmethod print-object ((obj drawing) stream)
   (print-unreadable-object (obj stream :type t)
-    (format stream "fitness:~,3E elements:~D"
+    (format stream "fitness:~,5E elements:~D"
             (fitness obj) (length (genome obj)))))
 
 
 ;;; Functions
 
-(defun draw-genome (genome reference background)
-  (let* ((width (width (surface reference)))
-         (height (height (surface reference)))
-         (surface (create-surface width height)))
-    (draw-surface-at-* background 0 0 :surface surface)
-    (loop for gene across genome
-          for color = (color :r (* 255 (svref gene 0))
-                             :g (* 255 (svref gene 1))
-                             :b (* 255 (svref gene 2))
-                             :a (* 255 (svref gene 3)))
-          for x = (floor (* width (svref gene 4)))
-          for y = (floor (* height (svref gene 5)))
-          for r = (floor (* (svref gene 6) (if (> height width) width height)))
-          do (draw-filled-circle-* x y r :color color :surface surface))
-    surface))
-
-
-(defun make-drawing (fitness genome surface)
-  (make-instance 'drawing :fitness fitness :genome genome :surface surface))
-
-
-(defun calculate-fitness (reference-surface surface)
-  (with-pixels ((s1 (fp reference-surface))
-                (s2 (fp surface)))
-    (loop with difference = 0
-          with width = (width reference-surface)
-          with height = (height reference-surface)
-          for y from 0 below height
-          do (loop for x from 0 below width
-                   for p1 = (read-pixel s1 x y)
-                   for r1 = (ash (logand p1 #xff0000) -16)
-                   for g1 = (ash (logand p1 #x00ff00)  -8)
-                   for b1 =      (logand p1 #x0000ff)
-                   for p2 = (read-pixel s2 x y)
-                   for r2 = (ash (logand p2 #xff0000) -16)
-                   for g2 = (ash (logand p2 #x00ff00)  -8)
-                   for b2 =      (logand p2 #x0000ff)
-                   for dr = (- r1 r2)
-                   for dg = (- g1 g2)
-                   for db = (- b1 b2)
-                   do (incf difference (+ (* dr dr) (* dg dg) (* db db))))
-          finally (return (/ 1 (1+ difference))))))
+(defun calculate-fitness (reference png)
+  "Both REFERENCE and PNG are ZPNG objects."
+  (when (or (not (= (zpng:width reference) (zpng:width png)))
+            (not (= (zpng:height reference) (zpng:height png))))
+    (error "dimensions of REFERENCE (~Dx~D) and PNG (~Dx~D) not equal"
+           (zpng:width reference) (zpng:height reference)
+           (zpng:width png) (zpng:height png)))
+  (loop with difference = 0
+        with datref = (zpng:image-data reference)
+        with datpng = (zpng:image-data png)
+        for i from 0 below (length datref) by 3
+        for dr = (- (aref datref    i   ) (aref datpng    i   ))
+        for dg = (- (aref datref (+ i 1)) (aref datpng (+ i 1)))
+        for db = (- (aref datref (+ i 2)) (aref datpng (+ i 2)))
+        do (incf difference (+ (* dr dr) (* dg dg) (* db db)))
+        finally (return (/ 1 (1+ difference)))))
 
 
 ;; #(red green blue alpha x y radius)
-(defun create-random-gene (radius)
-  (vector (random 1.0) (random 1.0) (random 1.0) (random 1.0)
-          (random 1.0) (random 1.0) radius))
+;;
+;; The position of all but radius doesn't actually matter.
+(defun create-random-gene (reference &optional (radius 16))
+  (let ((max-rgb (expt 2 (zpng::bpp reference))))
+    (vector (random max-rgb) (random max-rgb) (random max-rgb) (random max-rgb)
+            (random (zpng:width reference)) (random (zpng:height reference))
+            radius)))
 
 
-(defun create-random-genome (max-length radius)
+(defun create-random-genome (reference &optional (max-length 16) (radius 16))
   (when (<= max-length 0)
     (return-from create-random-genome nil))
-  (loop with len = max-length
-        with arr = (make-array (list len))
-        for i from 0 below len
-        do (setf (svref arr i) (create-random-gene radius))
+  (loop with arr = (make-array (list max-length))
+        for i from 0 below max-length
+        do (setf (svref arr i) (create-random-gene reference radius))
         finally (return arr)))
 
 
-(defun create-drawing (reference genome background)
-  (let ((surface (draw-genome genome reference background)))
-    (make-drawing (calculate-fitness (surface reference) surface)
-                  genome surface)))
+(defun modify-color (reference gene &optional delta)
+  (unless delta
+    (setf delta (zpng::bpp reference)))
+  (let* ((max-rgb (- (expt 2 (zpng::bpp reference)) 1))
+         (new-gene (copy-seq gene))
+         (delta*2 (* delta 2))
+         (dr (- (random delta*2) delta))
+         (dg (- (random delta*2) delta))
+         (db (- (random delta*2) delta))
+         (da (- (random delta*2) delta))
+         (r (+ (elt new-gene 0) dr))
+         (g (+ (elt new-gene 1) dg))
+         (b (+ (elt new-gene 2) db))
+         (a (+ (elt new-gene 3) da)))
+    (when (and (>= r 0)
+               (<= r max-rgb))
+      (incf (elt new-gene 0) dr))
+    (when (and (>= g 0)
+               (<= g max-rgb))
+      (incf (elt new-gene 1) dg))
+    (when (and (>= b 0)
+               (<= b max-rgb))
+      (incf (elt new-gene 2) db))
+    (when (and (>= a 0)
+               (<= a max-rgb))
+      (incf (elt new-gene 3) da))
+    new-gene))
 
 
-(defun create-random-drawing (reference max-genome-length radius background)
-  (create-drawing reference (create-random-genome max-genome-length radius)
-                  background))
+(defun modify-position (reference gene &optional delta)
+  (unless delta
+    (setf delta (zpng::bpp reference)))
+  (let* ((max-rgb (- (expt 2 (zpng::bpp reference)) 1))
+         (new-gene (copy-seq gene))
+         (delta*2 (* delta 2))
+         (dx (- (random delta*2) delta))
+         (dy (- (random delta*2) delta))
+         (x (+ (elt new-gene 4) dx))
+         (y (+ (elt new-gene 5) dy)))
+    (when (and (>= x 0)
+               (<= x max-rgb))
+      (incf (elt new-gene 4) dx))
+    (when (and (>= y 0)
+               (<= y max-rgb))
+      (incf (elt new-gene 5) dy))
+    new-gene))
 
 
-(defun draw-drawing (drawing &optional (offset 0))
-  (draw-surface-at-* (surface drawing) offset 0))
+(defun evolve-gene (reference gene &optional delta)
+  (unless delta
+    (setf delta (zpng::bpp reference)))
+  (let ((random-nr (random 1.0)))
+    (cond ((< random-nr 0.05) (modify-color reference gene (* 10 delta)))
+          ((< random-nr 0.10) (modify-position reference gene (* 10 delta)))
+          ((< random-nr 0.55) (modify-color reference gene delta))
+          (t                  (modify-position reference gene delta)))))
 
 
-(defun draw-surface (surface &optional (offset 0))
-  (draw-surface-at-* surface offset 0))
+(defun evolve-genome (reference genome &optional (modify-percentage 0.01))
+  (loop with len = (length genome)
+        with new-genome = (copy-seq genome)
+        ;; #'ceiling to make sure at least 1 gene is modified
+        repeat (ceiling (* modify-percentage len))
+        for random-nr = (random len)
+        for new-gene = (evolve-gene reference (elt genome random-nr))
+        do (setf (elt new-genome random-nr) new-gene)
+        finally (return new-genome)))
 
 
-(defun modify-color (drawing reference background)
-  (let ((new-genome
-         (loop with genome = (genome drawing)
-               with length = (length genome)
-               with index = (random length)
-               with vec = (make-array length)
-               for gene across genome
-               for i from 0
-               if (= i index)
-                 do (let ((new-gene (copy-seq gene))
-                          (dr (- (random 0.08) 0.04))
-                          (dg (- (random 0.08) 0.04))
-                          (db (- (random 0.08) 0.04))
-                          (da (- (random 0.08) 0.04)))
-                      (when (and (>= (+ (elt new-gene 0) dr) 0)
-                                 (<  (+ (elt new-gene 0) dr) 1.0))
-                        (incf (elt new-gene 0) dr))
-                      (when (and (>= (+ (elt new-gene 1) dg) 0)
-                                 (<  (+ (elt new-gene 1) dg) 1.0))
-                        (incf (elt new-gene 1) dg))
-                      (when (and (>= (+ (elt new-gene 2) db) 0)
-                                 (<  (+ (elt new-gene 2) db) 1.0))
-                        (incf (elt new-gene 2) db))
-                      (when (and (>= (+ (elt new-gene 3) da) 0)
-                                 (<  (+ (elt new-gene 3) da) 1.0))
-                        (incf (elt new-gene 3) da))
-                      (setf (svref vec i) new-gene))
-               else
-                 do (setf (svref vec i) (copy-seq gene))
-               finally (return vec))))
-    (create-drawing reference new-genome background)))
+;; This is from either:
+;;     - http://www.codeguru.com/cpp/cpp/algorithms/general/article.php/c15989/Tip-An-Optimized-Formula-for-Alpha-Blending-Pixels.htm
+;; or
+;;     - https://www.gamedev.net/topic/34688-alpha-blend-formula/
+(defun set-pixel-unsafe (png x y r g b &optional (a 255) (max-rgb 255))
+  "PNG is a ZPNG object.
+  X and Y are integers, must be greater or equal to 0 and less than the
+  width and height of the PNG.
+  R, G, B and A are values between 0 and 1 (inclusive)."
+  (declare (optimize (speed 3))
+           (type fixnum x y r g b a max-rgb))
+  (when (<= a 0)
+    (return-from set-pixel-unsafe))
+  (let* ((data (the (simple-array (unsigned-byte 8)) (zpng:image-data png)))
+         (index   (the fixnum (+ (the fixnum (* y (the fixnum (zpng:width png))
+                                                3))
+                                 (the fixnum (* x 3)))))
+         (index+1 (+ index 1))
+         (index+2 (+ index 2)))
+    (if (>= a 255)
+        (setf (aref data index  ) r
+              (aref data index+1) g
+              (aref data index+2) b)
+        (let* ((src-r (the fixnum (* (aref data index  ) (- max-rgb a))))
+               (src-g (the fixnum (* (aref data index+1) (- max-rgb a))))
+               (src-b (the fixnum (* (aref data index+2) (- max-rgb a))))
+               (dst-r (the fixnum (* r a)))
+               (dst-g (the fixnum (* g a)))
+               (dst-b (the fixnum (* b a))))
+          (setf (aref data index  ) (ash (+ src-r dst-r) -8)
+                (aref data index+1) (ash (+ src-g dst-g) -8)
+                (aref data index+2) (ash (+ src-b dst-b) -8))))))
 
 
-(defun modify-position (drawing reference background)
-  (let ((new-genome
-         (loop with genome = (genome drawing)
-               with length = (length genome)
-               with index = (random length)
-               with vec = (make-array length)
-               for gene across genome
-               for i from 0
-               if (= i index)
-                 do (let ((new-gene (copy-seq gene))
-                          (dx (- (random 0.08) 0.04))
-                          (dy (- (random 0.08) 0.04)))
-                      (when (and (>= (+ (elt new-gene 4) dx) 0)
-                                 (<  (+ (elt new-gene 4) dx) 1.0))
-                        (incf (elt new-gene 4) dx))
-                      (when (and (>= (+ (elt new-gene 5) dy) 0)
-                                 (<  (+ (elt new-gene 5) dy) 1.0))
-                        (incf (elt new-gene 5) dy))
-                      (setf (svref vec i) new-gene))
-               else
-                 do (setf (svref vec i) (copy-seq gene))
-               finally (return vec))))
-    (create-drawing reference new-genome background)))
+(defun draw-horizontal-line (png x0 x1 y r g b &optional (a 255))
+  (declare (optimize (speed 3))
+           (type fixnum x0 x1 y r g b a))
+  (when (or (< y 0) (>= y (the fixnum (zpng:height png))))
+    (return-from draw-horizontal-line))
+  (when (< x0 0)
+    (setf x0 0))
+  (when (>= x1 (the fixnum (zpng:width png)))
+    (setf x1 (- (the fixnum (zpng:width png)) 1)))
+  (loop for x from x0 to x1
+        do (set-pixel-unsafe png x y r g b a)))
 
 
-(defun evolve (drawing reference background)
-  (let ((rnr (random 1.0)))
-    (cond ((< rnr 0.5) (modify-color drawing reference background))
-          (t           (modify-position drawing reference background)))))
+;; http://en.wikipedia.org/wiki/Midpoint_circle_algorithm
+(defun draw-filled-circle (png x y radius r g b &optional (a 255))
+  (when (= radius 0)
+    (set-pixel-unsafe png x y r g b a)
+    (return-from draw-filled-circle))
+  (let ((f (- 1 radius))
+        (ddfx 1)
+        (ddfy (* -2 radius))
+        (x1 0)
+        (y1 radius))
+    (loop while (<= x1 y1)
+          do (draw-horizontal-line png (- x y1) (+ x y1) (+ y x1) r g b a)
+             (unless (= (+ y x1) (- y x1))  ; screws with transparency
+               (draw-horizontal-line png (- x y1) (+ x y1) (- y x1) r g b a))
+             (when (>= f 0)
+               (draw-horizontal-line png (- x x1) (+ x x1) (+ y y1) r g b a)
+               (draw-horizontal-line png (- x x1) (+ x x1) (- y y1) r g b a)
+               (decf y1)
+               (incf ddfy 2)
+               (incf f ddfy))
+             (incf x1)
+             (incf ddfx 2)
+             (incf f ddfx))))
 
 
-(defun load-reference (path)
-  (make-drawing 1.0 nil (load-image path)))
+(defun draw-genome (reference genome)
+  (let ((png (make-instance 'zpng:png :color-type :truecolor
+                            :width (zpng:width reference)
+                            :height (zpng:height reference))))
+    (loop for gene across genome
+          for r = (elt gene 0)
+          for g = (elt gene 1)
+          for b = (elt gene 2)
+          for a = (elt gene 3)
+          for x = (elt gene 4)
+          for y = (elt gene 5)
+          for radius = (elt gene 6)
+          do (draw-filled-circle png x y radius r g b a))
+    png))
+
+
+(defun make-drawing (reference genome)
+  (let* ((png (draw-genome reference genome))
+         (fitness (calculate-fitness reference png)))
+    (make-instance 'drawing :fitness fitness :genome genome :png png)))
+
+
+(defun evolve-drawing (reference drawing)
+  (let ((new-genome (evolve-genome reference (genome drawing))))
+    (make-drawing reference new-genome)))
+
+
+(defun create-random-drawing (reference &optional (max-length 128) (radius 16))
+  (make-drawing reference (create-random-genome reference max-length radius)))
+
+
+(defun read-png (path)
+  "Reads the PNG file at PATH and returns a ZPNG object."
+  (let* ((png-in (png-read:read-png-file path))
+         (png-out (make-instance 'zpng:png :color-type :truecolor
+                                 :width (png-read:width png-in)
+                                 :height (png-read:height png-in)))
+         (data-in (png-read:image-data png-in))
+         (data-out (zpng:data-array png-out)))
+    (loop for y from 0 below (png-read:height png-in)
+          do (loop for x from 0 below (png-read:width png-in)
+                   do (setf (aref data-out y x 0) (aref data-in x y 0)
+                            (aref data-out y x 1) (aref data-in x y 1)
+                            (aref data-out y x 2) (aref data-in x y 2))))
+    png-out))
+
+
+(defun write-png (png &optional (path "tmp.png"))
+  "Writes a ZPNG object to PATH."
+  (zpng:write-png png path))
+
+
+(defun save-drawing (drawing &optional (path "tmp.png"))
+  (write-png (png drawing) path))
 
 
 ;;; Main Program
 
-;; make min-radius one step smaller than 0.0125?
-(defun main (reference-path &key (max-genome-length 128) (min-radius 0.00625)
-             (target-fitness 5e-8) (threads 1) (visualize t))
-  (with-init ()
-    (window 128 128 :title-caption "float-me" :flags '(sdl-sw-surface))
-    (let* ((gen 0)
-           (last-gen-update 0)
-           (genome-length 8)
-           (radius 0.8)
-           (ref (load-reference reference-path))
-           (bg (create-surface (width (surface ref)) (height (surface ref))))
-           (candidate (create-random-drawing ref genome-length radius bg))
-           (result-genomes (make-array 0 :fill-pointer 0)))
-      (if visualize
-          (progn (resize-window (+ 2 (* 3 (width (surface ref))))
-                                 (height (surface ref)))
-                 (draw-drawing candidate (+ 1 (width (surface ref))))
-                 (draw-surface bg (+ 2 (* 2 (width (surface ref))))))
-          (resize-window (width (surface ref)) (height (surface ref))))
-      (draw-drawing ref)
-      (update-display)
-      (with-events ()
-        (:key-down-event (:key key) (when (or (key= key :sdl-key-escape)
-                                              (key= key :sdl-key-q))
-                                      (push-quit-event)))
-        (:quit-event () t)
-        (:video-expose-event () (update-display))
-        (:idle ()
-          (incf gen)
-          (when (>= (- gen last-gen-update) 128)
-            (when (< genome-length max-genome-length)
-              (setf genome-length (* genome-length 2)))
-            (setf radius (if (<= radius min-radius)
-                             (* 2 min-radius)
-                             (/ radius 2)))
-            (draw-surface-at-* (surface candidate) 0 0 :surface bg)
-            (loop for gene across (genome candidate)
-                  do (vector-push-extend gene result-genomes))
-            (setf candidate (create-random-drawing ref genome-length radius bg)
-                  last-gen-update gen))
-          (let ((new-candidates (loop repeat threads
-                                      collect (eager-future2:pcall
-                                               (lambda ()
-                                                 (evolve candidate ref bg))))))
-            (loop with all-futures-done = nil
-                  until all-futures-done
-                  do (loop with done = t
-                           for future in new-candidates
-                           do (unless (eager-future2:ready-to-yield? future)
-                                (setf done nil))
-                           finally (when done (setf all-futures-done done))))
-            (setf new-candidates (loop for future in new-candidates
-                                       collect (eager-future2:yield future))
-                  new-candidates (sort new-candidates
-                                       (lambda (a b)
-                                         (> (fitness a) (fitness b)))))
-            (when (> (fitness (first new-candidates)) target-fitness)
-              (when visualize
-                (draw-drawing candidate (+ 1 (width (surface ref))))
-                (draw-surface bg (+ 2 (* 2 (width (surface ref)))))
-                (update-display))
-              (format t "~D: target fitness reached...~%" gen)
-              (return-from main (append result-genomes (genome candidate))))
-            (when (> (fitness (first new-candidates)) (fitness candidate))
-              (setf candidate (first new-candidates))
-              (when visualize
-                (draw-drawing candidate (+ 1 (width (surface ref))))
-                (draw-surface bg (+ 2 (* 2 (width (surface ref)))))
-                (update-display))
-              (format t "[~D] f=~,8E len=~D r=~,4F~%" gen (fitness candidate)
-                      (length (genome candidate)) radius)
-              (setf last-gen-update gen))))))))
+(defun main (reference-path &key (max-generations 128) (max-genome-length 128)
+                                 (population 1) (png-out-path "tmp.png")
+                                 (min-radius 0.00625) (start-radius 128))
+  (declare (ignore min-radius population))
+  (let* ((ref (read-png reference-path))
+         (drw (create-random-drawing ref max-genome-length start-radius)))
+    (format t "[0] ~S: ~F~%" drw (fitness drw))
+    (save-drawing drw png-out-path)
+    (loop with dgen = 0
+          with last-change = 0
+          repeat max-generations
+          for gen from 1
+          for new-drw = (evolve-drawing ref drw)
+          do (when (> (fitness new-drw) (fitness drw))
+               (setf last-change gen
+                     drw         new-drw)
+               (format t "[~8D/~3D] ~S~%" gen dgen drw))
+             (setf dgen (- gen last-change))
+             (when (= 0 (mod gen 1000))
+               (save-drawing drw png-out-path)))
+    (save-drawing drw png-out-path)))
