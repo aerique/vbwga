@@ -14,7 +14,6 @@
 
 (in-package :cl)
 
-
 (asdf:oos 'asdf:load-op :eager-future2)
 (rename-package :eager-future2 :eager-future2 '(:ef))
 
@@ -32,9 +31,10 @@
 ;;; Classes
 
 (defclass drawing ()
-  ((fitness :reader fitness :initarg :fitness)
-   (genome  :reader genome  :initarg :genome)
-   (png     :reader png     :initarg :png)))
+  ((genome     :accessor genome     :initarg :genome)
+   (fitness    :reader   fitness    :initarg :fitness)
+   (png        :reader   png        :initarg :png)
+   (background :reader   background :initarg :background)))
 
 
 ;;; Methods
@@ -75,11 +75,11 @@
             radius)))
 
 
-(defun create-random-genome (reference &optional (max-length 16) (radius 16))
-  (when (<= max-length 0)
+(defun create-random-genome (reference &optional (length 16) (radius 16))
+  (when (<= length 0)
     (return-from create-random-genome nil))
-  (loop with arr = (make-array (list max-length))
-        for i from 0 below max-length
+  (loop with arr = (make-array (list length))
+        for i from 0 below length
         do (setf (svref arr i) (create-random-gene reference radius))
         finally (return arr)))
 
@@ -143,10 +143,13 @@
 
 
 (defun evolve-genome (reference genome &optional (modify-percentage 0.01))
+  (declare (ignore modify-percentage))
   (loop with len = (length genome)
         with new-genome = (copy-seq genome)
         ;; #'ceiling to make sure at least 1 gene is modified
-        repeat (ceiling (* modify-percentage len))
+        ;repeat (ceiling (* modify-percentage len))
+        ;; just a small fixed amount for now
+        repeat 4
         for random-nr = (random len)
         for new-gene = (evolve-gene reference (elt genome random-nr))
         do (setf (elt new-genome random-nr) new-gene)
@@ -201,6 +204,8 @@
 
 
 ;; http://en.wikipedia.org/wiki/Midpoint_circle_algorithm
+;; FIXME: This still produces artifacts (horizontal lines) for circles with
+;;        a large radius and alpha.
 (defun draw-filled-circle (png x y radius r g b &optional (a 255))
   (when (= radius 0)
     (set-pixel-unsafe png x y r g b a)
@@ -225,10 +230,12 @@
              (incf f ddfx))))
 
 
-(defun draw-genome (reference genome)
-  (let ((png (make-instance 'zpng:png :color-type :truecolor
-                            :width (zpng:width reference)
-                            :height (zpng:height reference))))
+(defun draw-genome (reference genome &optional background)
+  (let ((png (if background
+                 (zpng:copy-png background)
+                 (make-instance 'zpng:png :color-type :truecolor
+                                :width (zpng:width reference)
+                                :height (zpng:height reference)))))
     (loop for gene across genome
           for r = (elt gene 0)
           for g = (elt gene 1)
@@ -241,19 +248,27 @@
     png))
 
 
-(defun make-drawing (reference genome)
-  (let* ((png (draw-genome reference genome))
+(defun make-drawing (reference genome &optional background)
+  (let* ((bg (if background
+                 background
+                 (make-instance 'zpng:png :color-type :truecolor
+                                :width (zpng:width reference)
+                                :height (zpng:height reference))))
+         (png (draw-genome reference genome bg))
          (fitness (calculate-fitness reference png)))
-    (make-instance 'drawing :fitness fitness :genome genome :png png)))
+    (make-instance 'drawing :fitness fitness :genome genome :png png
+                            :background bg)))
 
 
-(defun evolve-drawing (reference drawing)
+(defun evolve-drawing (reference drawing &optional background)
   (let ((new-genome (evolve-genome reference (genome drawing))))
-    (make-drawing reference new-genome)))
+    (make-drawing reference new-genome background)))
 
 
-(defun create-random-drawing (reference &optional (max-length 128) (radius 16))
-  (make-drawing reference (create-random-genome reference max-length radius)))
+(defun create-random-drawing (reference &optional (max-length 128) (radius 16)
+                                                  background)
+  (make-drawing reference (create-random-genome reference max-length radius)
+                background))
 
 
 (defun read-png (path)
@@ -283,24 +298,42 @@
 
 ;;; Main Program
 
-(defun main (reference-path &key (max-generations 128) (max-genome-length 128)
+(defun main (reference-path &key (max-generations 128) (genome-length 4)
                                  (population 1) (png-out-path "tmp.png")
-                                 (min-radius 0.00625) (start-radius 128))
+                                 (min-radius 1) (radius 256) background)
   (declare (ignore min-radius population))
   (let* ((ref (read-png reference-path))
-         (drw (create-random-drawing ref max-genome-length start-radius)))
-    (format t "[0] ~S: ~F~%" drw (fitness drw))
+         (bg (if background
+                 background
+                 (make-instance 'zpng:png :color-type :truecolor
+                                :width (zpng:width ref)
+                                :height (zpng:height ref))))
+         (drw (create-random-drawing ref genome-length radius bg)))
+    (format t "[  gen   /upd] ~S: ~F~%" drw (fitness drw))
     (save-drawing drw png-out-path)
     (loop with dgen = 0
           with last-change = 0
           repeat max-generations
           for gen from 1
-          for new-drw = (evolve-drawing ref drw)
+          for new-drw = (evolve-drawing ref drw bg)
           do (when (> (fitness new-drw) (fitness drw))
                (setf last-change gen
                      drw         new-drw)
+               ;(save-drawing drw png-out-path)
                (format t "[~8D/~3D] ~S~%" gen dgen drw))
              (setf dgen (- gen last-change))
+             (when (> dgen 512)  ; FIXME turn 512 into a variable
+               (save-drawing drw "tmp-new-bg.png")
+               (setf bg            (zpng:copy-png (png drw))
+                     dgen          0
+                     genome-length (* 2 genome-length)
+                     last-change   gen
+                     radius        (ceiling (/ radius 2))
+                     (genome drw)  (create-random-genome ref genome-length
+                                                         radius)
+                     drw           (evolve-drawing ref drw bg))
+               (format t "*** Switching to genome-length=~D and radius=~D.~%"
+                       genome-length radius))
              (when (= 0 (mod gen 1000))
                (save-drawing drw png-out-path)))
     (save-drawing drw png-out-path)))
