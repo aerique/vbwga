@@ -68,13 +68,15 @@
 
 
 ;; circles: #(red green blue alpha x y radius)
+;; squares: #(red green blue alpha x y width/2)
 (defun create-random-gene (reference &optional (size 16) (type :circles))
   (let ((max-rgb (expt 2 (zpng::bpp reference))))
-    (cond ((equal type :circles)
+    (cond ((or (equal type :circles)
+               (equal type :squares))
            (vector (random max-rgb) (random max-rgb) (random max-rgb)
                    (random max-rgb) (random (zpng:width reference))
                    (random (zpng:height reference)) size))
-          (t (error "Unknown gene type: ~S!" type)))))
+          (t (error "Unknown gene type: ~S" type)))))
 
 
 (defun create-random-genome (reference &optional (length 16) (size 16)
@@ -135,7 +137,7 @@
     new-gene))
 
 
-(defun evolve-gene-circles (reference gene &optional delta)
+(defun evolve-gene (reference gene &optional delta)
   (unless delta
     (setf delta (zpng::bpp reference)))
   (let ((random-nr (random 1.0)))
@@ -155,9 +157,10 @@
         ;; just a small fixed amount for now
         repeat 4
         for rnr = (random len)
-        for new-gene = (cond ((equal type :circles)
-                              (evolve-gene-circles reference (elt genome rnr)))
-                             (t (error "Unknown gene type: ~S!" type)))
+        for new-gene = (cond ((or (equal type :circles)
+                                  (equal type :squares))
+                              (evolve-gene reference (elt genome rnr)))
+                             (t (error "Unknown gene type: ~S" type)))
         do (setf (elt new-genome rnr) new-gene)
         finally (return new-genome)))
 
@@ -250,10 +253,34 @@
         finally (return png)))
 
 
+(defun draw-filled-square (png x y width/2 r g b &optional (a 255))
+  (when (= width/2 0)
+    (set-pixel-unsafe png x y r g b a)
+    (return-from draw-filled-square))
+  (loop for y0 from (- y width/2) to (+ y width/2)
+        do (draw-horizontal-line png (- x width/2) (+ x width/2) y0 r g b a)))
+
+
+(defun draw-genome-squares (background genome)
+  (loop with png = (zpng:copy-png background)
+        for gene across genome
+        for r = (elt gene 0)
+        for g = (elt gene 1)
+        for b = (elt gene 2)
+        for a = (elt gene 3)
+        for x = (elt gene 4)
+        for y = (elt gene 5)
+        for width/2 = (elt gene 6)
+        do (draw-filled-square png x y width/2 r g b a)
+        finally (return png)))
+
+
 (defun make-drawing (reference background genome &optional (type :circles))
   (let* ((png (cond ((equal type :circles)
                      (draw-genome-circles background genome))
-                    (t (error "Unknown gene type: ~S!" type))))
+                    ((equal type :squares)
+                     (draw-genome-squares background genome))
+                    (t (error "Unknown gene type: ~S" type))))
          (fitness (calculate-fitness reference png)))
     (make-instance 'drawing :genome genome :gene-type type :fitness fitness
                    :png png :background background)))
