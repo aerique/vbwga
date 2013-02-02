@@ -2,7 +2,8 @@
 ;;;;
 ;;;; The painting has been turned 45 degrees clockwise!
 ;;;;
-;;;; Where to switch from 0.0-1.0 to 0-max{r,g,b,x,y}?
+;;;; - Where to switch from 0.0-1.0 to 0-max{r,g,b,x,y}?
+;;;; - Type should be hidden in drawing class and not in fn args.
 ;;;;
 ;;;; profiling:
 ;;;; o (require 'sb-sprof)
@@ -32,6 +33,7 @@
 
 (defclass drawing ()
   ((genome     :accessor genome     :initarg :genome)
+   (gene-type  :reader   gene-type  :initarg :gene-type)
    (fitness    :reader   fitness    :initarg :fitness)
    (png        :reader   png        :initarg :png)
    (background :reader   background :initarg :background)))
@@ -41,8 +43,8 @@
 
 (defmethod print-object ((obj drawing) stream)
   (print-unreadable-object (obj stream :type t)
-    (format stream "fitness:~,5E elements:~D"
-            (fitness obj) (length (genome obj)))))
+    (format stream "~A fitness:~,5E elements:~D"
+            (gene-type obj) (fitness obj) (length (genome obj)))))
 
 
 ;;; Functions
@@ -253,8 +255,8 @@
                      (draw-genome-circles background genome))
                     (t (error "Unknown gene type: ~S!" type))))
          (fitness (calculate-fitness reference png)))
-    (make-instance 'drawing :fitness fitness :genome genome :png png
-                            :background background)))
+    (make-instance 'drawing :genome genome :gene-type type :fitness fitness
+                   :png png :background background)))
 
 
 (defun evolve-drawing (reference background drawing &optional (type :circles))
