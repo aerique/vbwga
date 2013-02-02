@@ -310,6 +310,11 @@
                 type))
 
 
+(defun empty-png (reference)
+  (make-instance 'zpng:png :color-type :truecolor :width (zpng:width reference)
+                 :height (zpng:height reference)))
+
+
 (defun read-png (path)
   "Reads the PNG file at PATH and returns a ZPNG object."
   (let* ((png-in (png-read:read-png-file path))
@@ -331,22 +336,15 @@
   (zpng:write-png png path))
 
 
-(defun empty-png (reference)
-  (make-instance 'zpng:png :color-type :truecolor :width (zpng:width reference)
-                 :height (zpng:height reference)))
-
-
 (defun save-drawing (drawing &optional (path "tmp.png"))
   (write-png (png drawing) path))
 
 
 ;;; Main Program
 
-(defun main (reference-path &key (max-generations 1024) (genome-length 4)
-                                 (population 1) (png-out-path "tmp.png")
-                                 (min-size 1) (size 256) (type :circles)
-                                 background)
-  (declare (ignore min-size population))
+(defun main (reference-path &key (max-generations 256000) (genome-length 4)
+                                 (size 256) (type :circles) (min-size 1)
+                                 (png-out-path "tmp.png") background)
   (let* ((ref (read-png reference-path))
          (bg (if background
                  background
@@ -354,7 +352,7 @@
                                 :width (zpng:width ref)
                                 :height (zpng:height ref))))
          (drw (create-random-drawing ref bg genome-length size type)))
-    (format t "[  gen   /upd] ~S: ~F~%" drw (fitness drw))
+    (format t "[        /   ] ~S: ~F~%" drw (fitness drw))
     (save-drawing drw png-out-path)
     (loop with dgen = 0
           with last-change = 0
@@ -373,7 +371,9 @@
                      dgen          0
                      genome-length (* 2 genome-length)
                      last-change   gen
-                     size          (ceiling (/ size 2))
+                     size          (if (<= size min-size)
+                                       min-size
+                                       (ceiling (/ size 2)))
                      (genome drw)  (create-random-genome ref genome-length
                                                          size type)
                      drw           (evolve-drawing ref bg drw type))
