@@ -2,8 +2,8 @@
 ;;;;
 ;;;; The painting has been turned 45 degrees clockwise!
 ;;;;
-;;;; - Where to switch from 0.0-1.0 to 0-max{r,g,b,x,y}?
-;;;; - Type should be hidden in drawing class and not in fn args.
+;;;; o Type should be hidden in drawing class and not in fn args.
+;;;; o We need a way to make a genome resolution independent again.
 ;;;;
 ;;;; profiling:
 ;;;; o (require 'sb-sprof)
@@ -44,7 +44,9 @@
    (gene-type  :reader   gene-type  :initarg :gene-type)
    (fitness    :reader   fitness    :initarg :fitness)
    (png        :reader   png        :initarg :png)
-   (background :reader   background :initarg :background)))
+   (background :reader   background :initarg :background)
+   (width      :reader   width      :initarg :width)
+   (height     :reader   height     :initarg :height)))
 
 
 ;;; Methods
@@ -291,7 +293,8 @@
                     (t (error "Unknown gene type: ~S" type))))
          (fitness (calculate-fitness reference png)))
     (make-instance 'drawing :genome genome :gene-type type :fitness fitness
-                   :png png :background background)))
+                   :png png :background background
+                   :width (zpng:width png) :height (zpng:height png))))
 
 
 (defun evolve-drawing (reference background drawing &optional (type :circles))
@@ -326,6 +329,11 @@
 (defun write-png (png &optional (path "tmp.png"))
   "Writes a ZPNG object to PATH."
   (zpng:write-png png path))
+
+
+(defun empty-png (reference)
+  (make-instance 'zpng:png :color-type :truecolor :width (zpng:width reference)
+                 :height (zpng:height reference)))
 
 
 (defun save-drawing (drawing &optional (path "tmp.png"))
@@ -373,4 +381,5 @@
                        genome-length size))
              (when (= 0 (mod gen 1000))
                (save-drawing drw png-out-path)))
-    (save-drawing drw png-out-path)))
+    (save-drawing drw png-out-path)
+    drw))
