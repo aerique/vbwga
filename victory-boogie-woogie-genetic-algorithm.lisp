@@ -10,6 +10,14 @@
 ;;;; o (sb-sprof:with-profiling (:report :flat :loop nil :reset t
 ;;;;                             :sample-interval 0.001)
 ;;;;     <body>)
+;;;;
+;;;; To add new gene-types:
+;;;; o Add DRAW-GENOME-<gene-type>
+;;;; o Add DRAW-<gene-type> or DRAW-FILLED-<gene-type>
+;;;; o Add gene-type to #'cond in:
+;;;;   - CREATE-RANDOM-GENE
+;;;;   - EVOLVE-GENOME
+;;;;   - MAKE-DRAWING
 
 ;;; Packages
 
