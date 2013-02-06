@@ -1,6 +1,8 @@
 ;;;; victory-boogie-woogie-genetic-programming.lisp
 ;;;;
 ;;;; The painting has been turned 45 degrees clockwise!
+;;;;
+;;;; - use SUBTYPEP to check for subtypes, f.e. (subtypep 'integer 'number)
 
 ;;; Packages
 
@@ -23,6 +25,7 @@
 
 ;;; Functions
 
+;; SUBTYPEP!
 (defun get-items-of-type (items type)
   (loop for item in items
         when (equal (getf item :type) type) collect item
@@ -67,10 +70,16 @@
                   for item-type = (cond ((equal (elt args 0) '&rest)
                                          (elt args 1))
                                         (t (elt args i)))
-                  for items = (get-items-of-type (if (> max-depth 0)
-                                                     functions
-                                                     terminals)
-                                                 item-type)
+                  for items = (get-items-of-type
+                               (cond ((and (listp item-type)
+                                           (equal (elt item-type 0) 'terminal))
+                                      (append functions terminals))
+                                     ((> max-depth 0) functions)
+                                     (t terminals))
+                               (if (and (listp item-type)
+                                        (equal (elt item-type 0) 'terminal))
+                                   (elt item-type 1)
+                                   item-type))
                   collect (let ((item (random-elt items)))
                             (if (getf item :function)
                                 (create-program-full functions terminals
@@ -92,10 +101,11 @@
                   for item-type = (cond ((equal (elt args 0) '&rest)
                                          (elt args 1))
                                         (t (elt args i)))
-                  for items = (get-items-of-type (if (> max-depth 0)
-                                                   (append functions terminals)
-                                                   terminals)
-                                                 item-type)
+                  for items = (get-items-of-type
+                               (if (> max-depth 0)
+                                   (append functions terminals)
+                                   terminals)
+                               item-type)
                   collect (let ((item (random-elt items)))
                             (if (getf item :function)
                                 (create-program-grow functions terminals
@@ -264,10 +274,6 @@
 ;                            collect (getf terminal :terminal))))
 ;    ;(eval (append1 '(lambda (=input=)) tree))))
 ;    (eval (append1 `(lambda ,input-args) tree))))
-;
-;(defun run-tree (tree terminals input)
-;  "Turns TREE into a function and calls it with INPUT."
-;  (funcall (make-function tree terminals) input))
 
 (defun make-function (body)
   (eval (append '(lambda (=png=)) (list body))))
@@ -288,18 +294,17 @@
                        (:function *     :type integer :args (&rest integer))
                        (:function progn :type t       :args (&rest t))
                        (:function draw-filled-circle :type t
-                        :args (png integer integer integer integer integer
-                               integer integer))
-                       ;(:terminal =png= :type png)  ; for :full, hmm..
+                        :args ((terminal png) integer integer integer integer
+                               integer integer integer))
                        ))
-         ;; =foo= denote external inputs
+         ;; =foo= denotes external inputs
          (terminals  '((:terminal 0 :type integer) (:terminal 1 :type integer)
                        (:terminal 1 :type integer) (:terminal 2 :type integer)
                        (:terminal 3 :type integer) (:terminal 4 :type integer)
                        (:terminal 5 :type integer) (:terminal 6 :type integer)
                        (:terminal 7 :type integer) (:terminal 8 :type integer)
                        (:terminal 9 :type integer)
-                       (:terminal (random255) :type integer)
+                       ;(:terminal (random255) :type integer)
                        (:terminal =png= :type png))))
     (create-population functions terminals :max-arity max-arity
                        :max-depth max-depth :size size :type type)))
