@@ -5,6 +5,7 @@
 ;;;; o Type should be hidden in drawing class and not in fn args.
 ;;;; o We need a way to make a genome resolution independent again.
 ;;;; o :circles is nice at 256x256 after 512k generations (and size = 2).
+;;;;   - at 1024k+ generations straight lines and squares start to be made.
 ;;;; o :squares is nice at 256x256 after 1024k generations.
 ;;;;
 ;;;; profiling:
@@ -265,22 +266,6 @@
         finally (return png)))
 
 
-(defun draw-resolution-independent-genome-circles (genome width height)
-  (let ((background (make-instance 'zpng:png :color-type :truecolor
-                                   :width width :height height))
-        (new-genome (loop for gene across genome
-                          for r = (* (elt gene 0) 256)
-                          for g = (* (elt gene 1) 256)
-                          for b = (* (elt gene 2) 256)
-                          for a = (* (elt gene 3) 256)
-                          for x = (* (elt gene 4) width)
-                          for y = (* (elt gene 5) height)
-                          for radius = (* (elt gene 6) width)
-                          collect (vector r g b a x y radius) into result
-                          finally (return (coerce result 'vector)))))
-    (draw-genome-circles background new-genome)))
-
-
 (defun draw-filled-square (png x y width/2 r g b &optional (a 255))
   (when (= width/2 0)
     (set-pixel-unsafe png x y r g b a)
@@ -315,6 +300,35 @@
                    :width (zpng:width png) :height (zpng:height png))))
 
 
+(defun evolve-drawing (reference background drawing &optional (type :circles))
+  (let ((new-genome (evolve-genome reference (genome drawing) type)))
+    (make-drawing reference background new-genome type)))
+
+
+(defun create-random-drawing (reference background
+                              &optional (length 128) (size 16)
+                                        (type :circles))
+  (make-drawing reference background
+                (create-random-genome reference length size type)
+                type))
+
+
+(defun draw-resolution-independent-genome-circles (genome width height)
+  (let ((background (make-instance 'zpng:png :color-type :truecolor
+                                   :width width :height height))
+        (new-genome (loop for gene across genome
+                          for r = (* (elt gene 0) 256)
+                          for g = (* (elt gene 1) 256)
+                          for b = (* (elt gene 2) 256)
+                          for a = (* (elt gene 3) 256)
+                          for x = (* (elt gene 4) width)
+                          for y = (* (elt gene 5) height)
+                          for radius = (* (elt gene 6) width)
+                          collect (vector r g b a x y radius) into result
+                          finally (return (coerce result 'vector)))))
+    (draw-genome-circles background new-genome)))
+
+
 ;; XXX - only correct for circles and squares currently
 ;; XXX - background fuck things up, I need to keep the genome around that
 ;;       makes up the background
@@ -332,19 +346,6 @@
                           :png (zpng:copy-png (png drawing))
                           :background (zpng:copy-png (background drawing))
                           :width width :height height))))
-
-
-(defun evolve-drawing (reference background drawing &optional (type :circles))
-  (let ((new-genome (evolve-genome reference (genome drawing) type)))
-    (make-drawing reference background new-genome type)))
-
-
-(defun create-random-drawing (reference background
-                              &optional (length 128) (size 16)
-                                        (type :circles))
-  (make-drawing reference background
-                (create-random-genome reference length size type)
-                type))
 
 
 (defun empty-png (reference)
@@ -389,7 +390,7 @@
                                 :width (zpng:width ref)
                                 :height (zpng:height ref))))
          (drw (create-random-drawing ref bg genome-length size type)))
-    (format t "[        /   ] ~S: ~F~%" drw (fitness drw))
+    (format t "[        /   ] ~S~%" drw)
     (save-drawing drw png-out-path)
     (loop with dgen = 0
           with last-change = 0
