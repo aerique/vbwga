@@ -7,6 +7,7 @@
 ;;;; o :circles is nice at 256x256 after 512k generations (and size = 2).
 ;;;;   - at 1024k+ generations straight lines and squares start to be made.
 ;;;; o :squares is nice at 256x256 after 1024k generations.
+;;;; o :circles needs 2048000 gens at 512x512 and 8 elements and 512 radius.
 ;;;;
 ;;;; profiling:
 ;;;; o (require 'sb-sprof)
@@ -390,7 +391,7 @@
                                 :width (zpng:width ref)
                                 :height (zpng:height ref))))
          (drw (create-random-drawing ref bg genome-length size type)))
-    (format t "[        /   ] ~S~%" drw)
+    (format t "[        /   ] ~S size=~D~%" drw size)
     (save-drawing drw png-out-path)
     (loop with dgen = 0
           with last-change = 0
@@ -401,7 +402,7 @@
                (setf last-change gen
                      drw         new-drw)
                ;(save-drawing drw png-out-path)
-               (format t "[~8D/~3D] ~S~%" gen dgen drw))
+               (format t "[~8D/~3D] ~S size=~D~%" gen dgen drw size))
              (setf dgen (- gen last-change))
              (when (> dgen 512)  ; FIXME turn 512 into a variable
                (save-drawing drw "tmp-new-bg.png")
