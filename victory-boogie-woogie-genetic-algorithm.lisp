@@ -45,10 +45,11 @@
 
 (defclass drawing ()
   ((genome     :accessor genome     :initarg :genome)
+   (bg-genome  :accessor bg-genome  :initarg :bg-genome)
+   (background :accessor background :initarg :background)
    (gene-type  :reader   gene-type  :initarg :gene-type)
    (fitness    :reader   fitness    :initarg :fitness)
    (png        :reader   png        :initarg :png)
-   (background :reader   background :initarg :background)
    (width      :reader   width      :initarg :width)
    (height     :reader   height     :initarg :height)))
 
@@ -161,8 +162,8 @@
           (t                  (modify-position reference gene delta)))))
 
 
-(defun evolve-genome (reference genome
-                      &optional (modify-percentage 0.01) (type :circles))
+(defun evolve-genome (reference genome &key (modify-percentage 0.01)
+                                            (type :circles))
   (declare (ignore modify-percentage))
   (loop with len = (length genome)
         with new-genome = (copy-seq genome)
@@ -289,34 +290,37 @@
         finally (return png)))
 
 
-(defun make-drawing (reference background genome &optional (type :circles))
+(defun make-drawing (reference background genome bg-genome
+                     &optional (type :circles))
   (let* ((png (cond ((equal type :circles)
                      (draw-genome-circles background genome))
                     ((equal type :squares)
                      (draw-genome-squares background genome))
                     (t (error "Unknown gene type: ~S" type))))
          (fitness (calculate-fitness reference png)))
-    (make-instance 'drawing :genome genome :gene-type type :fitness fitness
-                   :png png :background background
+    (make-instance 'drawing :genome genome :bg-genome bg-genome :gene-type type
+                   :fitness fitness :png png :background background
                    :width (zpng:width png) :height (zpng:height png))))
 
 
-(defun evolve-drawing (reference background drawing &optional (type :circles))
-  (let ((new-genome (evolve-genome reference (genome drawing) type)))
-    (make-drawing reference background new-genome type)))
+(defun evolve-drawing (reference drawing)
+  (let ((new-genome (evolve-genome reference (genome drawing)
+                                   :type (gene-type drawing))))
+    (make-drawing reference (background drawing) new-genome (bg-genome drawing)
+                  (gene-type drawing))))
 
 
-(defun create-random-drawing (reference background
-                              &optional (length 128) (size 16)
-                                        (type :circles))
-  (make-drawing reference background
+(defun create-random-drawing (reference &optional (length 128) (size 16)
+                                                  (type :circles))
+  (make-drawing reference (empty-png reference)
                 (create-random-genome reference length size type)
-                type))
+                (make-array '(0) :fill-pointer 0) type))
 
 
 (defun draw-resolution-independent-genome-circles (genome width height)
   (let ((background (make-instance 'zpng:png :color-type :truecolor
                                    :width width :height height))
+        ;; FIXME use bg-genome too
         (new-genome (loop for gene across genome
                           for r = (* (elt gene 0) 256)
                           for g = (* (elt gene 1) 256)
@@ -350,7 +354,8 @@
 
 
 (defun empty-png (reference)
-  (make-instance 'zpng:png :color-type :truecolor :width (zpng:width reference)
+  (make-instance 'zpng:png :color-type :truecolor
+                 :width (zpng:width reference)
                  :height (zpng:height reference)))
 
 
@@ -382,43 +387,61 @@
 ;;; Main Program
 
 (defun main (reference-path &key (max-generations 256000) (genome-length 4)
-                                 (size 256) (type :circles) (min-size 1)
-                                 (png-out-path "tmp.png") background)
+                                 (size 256) (min-size 1) (type :circles)
+                                 (png-out-path "tmp.png"))
   (let* ((ref (read-png reference-path))
-         (bg (if background
-                 background
-                 (make-instance 'zpng:png :color-type :truecolor
-                                :width (zpng:width ref)
-                                :height (zpng:height ref))))
-         (drw (create-random-drawing ref bg genome-length size type)))
+         (drw (create-random-drawing ref genome-length size type)))
     (format t "[        /   ] ~S size=~D~%" drw size)
     (save-drawing drw png-out-path)
     (loop with dgen = 0
           with last-change = 0
           repeat max-generations
           for gen from 1
-          for new-drw = (evolve-drawing ref bg drw type)
+          for new-drw = (evolve-drawing ref drw)
           do (when (> (fitness new-drw) (fitness drw))
                (setf last-change gen
                      drw         new-drw)
                ;(save-drawing drw png-out-path)
                (format t "[~8D/~3D] ~S size=~D~%" gen dgen drw size))
              (setf dgen (- gen last-change))
+             ;; 256 was maybe too little but 512 seems too much (for 256x256)
              (when (> dgen 512)  ; FIXME turn 512 into a variable
                (save-drawing drw "tmp-new-bg.png")
-               (setf bg            (zpng:copy-png (png drw))
-                     dgen          0
-                     genome-length (* 2 genome-length)
-                     last-change   gen
-                     size          (if (<= size min-size)
-                                       min-size
-                                       (ceiling (/ size 2)))
-                     (genome drw)  (create-random-genome ref genome-length
-                                                         size type)
-                     drw           (evolve-drawing ref bg drw type))
+               (setf dgen             0
+                     genome-length    (* 2 genome-length)
+                     last-change      gen
+                     size             (if (<= size min-size)
+                                          min-size
+                                          (ceiling (/ size 2)))
+                     (genome drw)     (create-random-genome ref genome-length
+                                                            size type)
+                     (bg-genome drw)  (concatenate 'vector (bg-genome drw)
+                                                           (genome drw))
+                     (background drw) (zpng:copy-png (png drw))
+                     drw              (evolve-drawing ref drw))
                (format t "*** Switching to genome-length=~D and size=~D.~%"
                        genome-length size))
              (when (= 0 (mod gen 1000))
                (save-drawing drw png-out-path)))
     (save-drawing drw png-out-path)
     drw))
+
+
+; (sb-sprof:with-profiling (:report :flat :loop nil :reset t) (main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :max-generations 1024000 :min-size 8 :size 512 :png-out-path "/home/erikw/tmp.png"))
+;
+; Number of samples:   50000
+; Sample interval:     0.01 seconds
+; Total sampling time: 500.0 seconds
+; Number of cycles:    0
+; Sampled threads:
+;  #<SB-THREAD:THREAD "repl-thread" RUNNING {10047D8113}>
+;
+;            Self        Total        Cumul
+;   Nr  Count     %  Count     %  Count     %    Calls  Function
+; ------------------------------------------------------------------------
+;    1  23608  47.2  30389  60.8  23608  47.2        -  SET-PIXEL-UNSAFE
+;    2   8679  17.4   8679  17.4  32287  64.6        -  SB-VM::GENERIC-+
+;    3   4533   9.1   4533   9.1  36820  73.6        -  (LAMBDA (SB-PCL::.ARG0.) :IN "/build/sbcl-u3NJWd/sbcl-1.0.57.0/src/pcl/braid.fasl")
+;    4   3195   6.4   7632  15.3  40015  80.0        -  CALCULATE-FITNESS
+;    5   2393   4.8   2393   4.8  42408  84.8        -  SB-KERNEL:HAIRY-DATA-VECTOR-REF/CHECK-BOUNDS
+;    6   2328   4.7  40384  80.8  44736  89.5        -  DRAW-HORIZONTAL-LINE
