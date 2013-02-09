@@ -95,7 +95,8 @@
     (append (list (getf fn :function))
             (loop with args = (getf fn :args)
                   repeat (if (equal (elt args 0) '&rest)
-                             (+ (random max-arity) 1)
+                             ;(+ (random max-arity) 1)
+                             max-arity
                              (length args))
                   for i from 0
                   for item-type = (cond ((equal (elt args 0) '&rest)
@@ -105,8 +106,12 @@
                                (if (> max-depth 0)
                                    (append functions terminals)
                                    terminals)
-                               item-type)
-                  collect (let ((item (random-elt items)))
+                               ;item-type)
+                               (if (and (listp item-type)
+                                        (equal (elt item-type 0) 'terminal))
+                                   (elt item-type 1)
+                                   item-type))
+                   collect (let ((item (random-elt items)))
                             (if (getf item :function)
                                 (create-program-grow functions terminals
                                                     :fn-type item-type
@@ -293,12 +298,15 @@
                        (:function -     :type integer :args (&rest integer))
                        (:function *     :type integer :args (&rest integer))
                        (:function progn :type t       :args (&rest t))
+                       ;; more progns!
+                       (:function progn :type t       :args (&rest t))
                        (:function draw-filled-circle :type t
                         :args ((terminal png) integer integer integer integer
                                integer integer integer))
                        ))
          ;; =foo= denotes external inputs
-         (terminals  '((:terminal 0 :type integer) (:terminal 1 :type integer)
+         (terminals  '(;; these should be replaced by #'random10
+                       (:terminal 0 :type integer) (:terminal 1 :type integer)
                        (:terminal 1 :type integer) (:terminal 2 :type integer)
                        (:terminal 3 :type integer) (:terminal 4 :type integer)
                        (:terminal 5 :type integer) (:terminal 6 :type integer)
