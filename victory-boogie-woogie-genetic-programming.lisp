@@ -8,6 +8,7 @@
 
 (in-package :cl)
 
+(asdf:oos 'asdf:load-op :cl-pdf)  ; the end result should be in PDF
 (asdf:oos 'asdf:load-op :png-read)
 (asdf:oos 'asdf:load-op :zpng)
 
