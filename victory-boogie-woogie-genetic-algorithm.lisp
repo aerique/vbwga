@@ -189,7 +189,8 @@
   X and Y are integers, must be greater or equal to 0 and less than the
   width and height of the PNG.
   R, G, B and A are values between 0 and 1 (inclusive)."
-  (declare (optimize (speed 3))
+  ;; (safety 0) gets rid of some extra optimization notes
+  (declare (optimize (safety 0) (speed 3))
            (type fixnum x y r g b a max-rgb))
   (when (<= a 0)
     (return-from set-pixel-unsafe))
@@ -215,7 +216,8 @@
 
 
 (defun draw-horizontal-line (png x0 x1 y r g b &optional (a 255))
-  (declare (optimize (speed 3))
+  ;; (safety 0) gets rid of some extra optimization notes
+  (declare (optimize (safety 0) (speed 3))
            (type fixnum x0 x1 y r g b a))
   (when (or (< y 0) (>= y (the fixnum (zpng:height png))))
     (return-from draw-horizontal-line))
