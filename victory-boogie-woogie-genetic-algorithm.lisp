@@ -2,6 +2,7 @@
 ;;;;
 ;;;; The painting has been turned 45 degrees clockwise!
 ;;;;
+;;;; o This looks really nice: (main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :size 512 :genome-length 8 :min-size 2 :max-generations 3000000)
 ;;;; o Type should be hidden in drawing class and not in fn args.
 ;;;; o We need a way to make a genome resolution independent again.
 ;;;; o :circles is nice at 256x256 after 512k generations (and size = 2).
@@ -39,6 +40,11 @@
   (:use :cl))
 
 (in-package :vbw)
+
+
+;;; Globals
+
+(defparameter *gnuplot-data* nil)
 
 
 ;;; Classes
@@ -386,11 +392,23 @@
   (write-png (png drawing) path))
 
 
+;; In gnuplot do: plot 'tmp.dat' using 1:2 w l,           \
+;;                     'tmp.dat' using 1:3 w l axes x1y2, \
+;;                     'tmp.dat' using 1:4 w l axes x1y2
+(defun write-gnuplot-data (&optional (path "tmp.dat"))
+  (with-open-file (f path :direction :output :if-exists :supersede)
+	(loop for lst across *gnuplot-data*
+	   do (format f "~D ~F ~D ~D~%"
+				  (getf lst :generation) (getf lst :fitness)
+				  (getf lst :genome-length) (getf lst :size)))))
+
+
 ;;; Main Program
 
 (defun main (reference-path &key (max-generations 256000) (genome-length 4)
                                  (size 256) (min-size 1) (type :circles)
                                  (png-out-path "tmp.png"))
+  (setf *gnuplot-data* (make-array '(0) :fill-pointer 0))
   (let* ((ref (read-png reference-path))
          (drw (create-random-drawing ref genome-length size type)))
     (format t "[        /   ] ~S size=~D~%" drw size)
@@ -401,6 +419,11 @@
           for gen from 1
           for new-drw = (evolve-drawing ref drw)
           do (when (> (fitness new-drw) (fitness drw))
+			   (vector-push-extend (list :generation gen
+										 :fitness (fitness new-drw)
+										 :genome-length genome-length
+										 :size size)
+								   *gnuplot-data*)
                (setf last-change gen
                      drw         new-drw)
                ;(save-drawing drw png-out-path)
@@ -427,23 +450,3 @@
                (save-drawing drw png-out-path)))
     (save-drawing drw png-out-path)
     drw))
-
-
-; (sb-sprof:with-profiling (:report :flat :loop nil :reset t) (main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :max-generations 1024000 :min-size 8 :size 512 :png-out-path "/home/erikw/tmp.png"))
-;
-; Number of samples:   50000
-; Sample interval:     0.01 seconds
-; Total sampling time: 500.0 seconds
-; Number of cycles:    0
-; Sampled threads:
-;  #<SB-THREAD:THREAD "repl-thread" RUNNING {10047D8113}>
-;
-;            Self        Total        Cumul
-;   Nr  Count     %  Count     %  Count     %    Calls  Function
-; ------------------------------------------------------------------------
-;    1  23608  47.2  30389  60.8  23608  47.2        -  SET-PIXEL-UNSAFE
-;    2   8679  17.4   8679  17.4  32287  64.6        -  SB-VM::GENERIC-+
-;    3   4533   9.1   4533   9.1  36820  73.6        -  (LAMBDA (SB-PCL::.ARG0.) :IN "/build/sbcl-u3NJWd/sbcl-1.0.57.0/src/pcl/braid.fasl")
-;    4   3195   6.4   7632  15.3  40015  80.0        -  CALCULATE-FITNESS
-;    5   2393   4.8   2393   4.8  42408  84.8        -  SB-KERNEL:HAIRY-DATA-VECTOR-REF/CHECK-BOUNDS
-;    6   2328   4.7  40384  80.8  44736  89.5        -  DRAW-HORIZONTAL-LINE
