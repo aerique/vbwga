@@ -31,6 +31,7 @@
 ;(asdf:oos 'asdf:load-op :eager-future2)
 ;(rename-package :eager-future2 :eager-future2 '(:ef))
 
+(asdf:oos 'asdf:load-op :cl-pdf)
 (asdf:oos 'asdf:load-op :png-read)
 (asdf:oos 'asdf:load-op :zpng)
 
@@ -43,6 +44,8 @@
 
 
 ;;; Globals
+
+(defparameter +max-rgba+ 255)
 
 (defparameter *gnuplot-data* nil)
 
@@ -92,6 +95,7 @@
 ;; squares: #(red green blue alpha x y width/2)
 (defun create-random-gene (reference &optional (size 16) (type :circles))
   (let ((max-rgb (expt 2 (zpng::bpp reference))))
+    ;; XXX set max-rgba here?
     (cond ((or (equal type :circles)
                (equal type :squares))
            (vector (random max-rgb) (random max-rgb) (random max-rgb)
@@ -190,7 +194,8 @@
 ;;     - http://www.codeguru.com/cpp/cpp/algorithms/general/article.php/c15989/Tip-An-Optimized-Formula-for-Alpha-Blending-Pixels.htm
 ;; or
 ;;     - https://www.gamedev.net/topic/34688-alpha-blend-formula/
-(defun set-pixel-unsafe (png x y r g b &optional (a 255) (max-rgb 255))
+(defun set-pixel-unsafe (png x y r g b &optional (a +max-rgba+)
+                                                 (max-rgb +max-rgba+))
   "PNG is a ZPNG object.
   X and Y are integers, must be greater or equal to 0 and less than the
   width and height of the PNG.
@@ -206,7 +211,7 @@
                                  (the fixnum (* x 3)))))
          (index+1 (+ index 1))
          (index+2 (+ index 2)))
-    (if (>= a 255)
+    (if (>= a max-rgb)
         (setf (aref data index  ) r
               (aref data index+1) g
               (aref data index+2) b)
@@ -221,7 +226,7 @@
                 (aref data index+2) (ash (+ src-b dst-b) -8))))))
 
 
-(defun draw-horizontal-line (png x0 x1 y r g b &optional (a 255))
+(defun draw-horizontal-line (png x0 x1 y r g b &optional (a +max-rgba+))
   ;; (safety 0) gets rid of some extra optimization notes
   (declare (optimize (safety 0) (speed 3))
            (type fixnum x0 x1 y r g b a))
@@ -238,7 +243,7 @@
 ;; http://en.wikipedia.org/wiki/Midpoint_circle_algorithm
 ;; FIXME: This still produces artifacts (horizontal lines) for circles with
 ;;        a large radius and alpha.
-(defun draw-filled-circle (png x y radius r g b &optional (a 255))
+(defun draw-filled-circle (png x y radius r g b &optional (a +max-rgba+))
   (when (= radius 0)
     (set-pixel-unsafe png x y r g b a)
     (return-from draw-filled-circle))
@@ -276,7 +281,7 @@
         finally (return png)))
 
 
-(defun draw-filled-square (png x y width/2 r g b &optional (a 255))
+(defun draw-filled-square (png x y width/2 r g b &optional (a +max-rgba+))
   (when (= width/2 0)
     (set-pixel-unsafe png x y r g b a)
     (return-from draw-filled-square))
@@ -318,6 +323,12 @@
                   (gene-type drawing))))
 
 
+(defun empty-png (reference)
+  (make-instance 'zpng:png :color-type :truecolor
+                 :width (zpng:width reference)
+                 :height (zpng:height reference)))
+
+
 (defun create-random-drawing (reference &optional (length 128) (size 16)
                                                   (type :circles))
   (make-drawing reference (empty-png reference)
@@ -328,32 +339,37 @@
 (defun draw-resolution-independent-genome-circles (genome width height)
   (let ((background (make-instance 'zpng:png :color-type :truecolor
                                    :width width :height height))
-        ;; FIXME use bg-genome too
-        (new-genome (loop for gene across genome
-                          for r = (* (elt gene 0) 256)
-                          for g = (* (elt gene 1) 256)
-                          for b = (* (elt gene 2) 256)
-                          for a = (* (elt gene 3) 256)
+        (new-genome (loop with radius = (/ (+ width height) 2)
+                          for gene across genome
+                          for r = (* (elt gene 0) +max-rgba+)
+                          for g = (* (elt gene 1) +max-rgba+)
+                          for b = (* (elt gene 2) +max-rgba+)
+                          for a = (* (elt gene 3) +max-rgba+)
                           for x = (* (elt gene 4) width)
                           for y = (* (elt gene 5) height)
-                          for radius = (* (elt gene 6) width)
-                          collect (vector r g b a x y radius) into result
+                          for s = (* (elt gene 6) radius)
+                          collect (vector r g b a x y s) into result
                           finally (return (coerce result 'vector)))))
     (draw-genome-circles background new-genome)))
 
 
 ;; XXX - only correct for circles and squares currently
-;; XXX - background fuck things up, I need to keep the genome around that
-;;       makes up the background
 (defun resolution-independent-drawing (drawing)
   (loop with width = (width drawing)
         with height = (height drawing)
-        for gene across (genome drawing)
-        ;; yeah, hardcoded
-        collect (loop for item across gene collect (/ item 256))
-          into new-genome
+        for gene across (concatenate 'vector (bg-genome drawing)
+                                             (genome drawing))
+        for r = (/ (elt gene 0) +max-rgba+)
+        for g = (/ (elt gene 1) +max-rgba+)
+        for b = (/ (elt gene 2) +max-rgba+)
+        for a = (/ (elt gene 3) +max-rgba+)
+        for x = (/ (elt gene 4) width)
+        for y = (/ (elt gene 5) height)
+        for s = (/ (elt gene 6) (/ (+ width height) 2))
+        collect (vector r g b a x y s) into new-genome
         finally (return (make-instance 'drawing
                           :genome (coerce new-genome 'vector)
+                          :bg-genome nil
                           :gene-type (gene-type drawing)
                           :fitness (fitness drawing)
                           :png (zpng:copy-png (png drawing))
@@ -361,10 +377,29 @@
                           :width width :height height))))
 
 
-(defun empty-png (reference)
-  (make-instance 'zpng:png :color-type :truecolor
-                 :width (zpng:width reference)
-                 :height (zpng:height reference)))
+(defun write-pdf (drawing &optional (path "tmp.pdf"))
+  (pdf:with-document ()
+    (pdf:with-page ()
+      (pdf:set-rgb-fill 0 0 0)
+      (pdf:rectangle 0 0 (elt (pdf::bounds pdf:*page*) 2)
+                     (elt (pdf::bounds pdf:*page*) 3))
+      (pdf:close-and-fill)
+      (loop with width = (elt (pdf::bounds pdf:*page*) 2)
+            with height = (elt (pdf::bounds pdf:*page*) 3)
+            with radius = (/ (+ width height) 2)
+            for gene across (genome drawing)
+            for r = (elt gene 0)
+            for g = (elt gene 1)
+            for b = (elt gene 2)
+            for a = (coerce (elt gene 3) 'float)
+            for x = (elt gene 4)
+            for y = (- 1 (elt gene 5))
+            for s = (elt gene 6)
+            do (pdf:set-rgb-fill r g b)
+               (pdf:set-fill-transparency a)
+               (pdf:circle (* x width) (* y height) (* s radius))
+               (pdf:close-and-fill)))
+    (pdf:write-document path)))
 
 
 (defun read-png (path)
@@ -392,9 +427,14 @@
   (write-png (png drawing) path))
 
 
-;; In gnuplot do: plot 'tmp.dat' using 1:2 w l,           \
-;;                     'tmp.dat' using 1:3 w l axes x1y2, \
-;;                     'tmp.dat' using 1:4 w l axes x1y2
+;; In gnuplot do:
+;; - set format x "%.0sk"
+;; - set y2tics
+;; - set format y2 "%g"
+;; - set logscale y2
+;; - plot 'tmp.dat' using 1:2 t 'fitness'   w l,           \
+;;        'tmp.dat' using 1:3 t '#genomes'  w l axes x1y2, \
+;;        'tmp.dat' using 1:4 t 'draw size' w l axes x1y2
 (defun write-gnuplot-data (&optional (path "tmp.dat"))
   (with-open-file (f path :direction :output :if-exists :supersede)
 	(loop for lst across *gnuplot-data*
