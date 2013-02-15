@@ -32,6 +32,7 @@
 ;(rename-package :eager-future2 :eager-future2 '(:ef))
 
 (asdf:oos 'asdf:load-op :cl-pdf)
+(asdf:oos 'asdf:load-op :cl-store)
 (asdf:oos 'asdf:load-op :png-read)
 (asdf:oos 'asdf:load-op :zpng)
 
@@ -341,13 +342,14 @@
                                    :width width :height height))
         (new-genome (loop with radius = (/ (+ width height) 2)
                           for gene across genome
-                          for r = (* (elt gene 0) +max-rgba+)
-                          for g = (* (elt gene 1) +max-rgba+)
-                          for b = (* (elt gene 2) +max-rgba+)
-                          for a = (* (elt gene 3) +max-rgba+)
-                          for x = (* (elt gene 4) width)
-                          for y = (* (elt gene 5) height)
-                          for s = (* (elt gene 6) radius)
+                          ;; FLOOR or CEILING?
+                          for r = (floor (* (elt gene 0) +max-rgba+))
+                          for g = (floor (* (elt gene 1) +max-rgba+))
+                          for b = (floor (* (elt gene 2) +max-rgba+))
+                          for a = (floor (* (elt gene 3) +max-rgba+))
+                          for x = (floor (* (elt gene 4) width))
+                          for y = (floor (* (elt gene 5) height))
+                          for s = (floor (* (elt gene 6) radius))
                           collect (vector r g b a x y s) into result
                           finally (return (coerce result 'vector)))))
     (draw-genome-circles background new-genome)))
@@ -369,7 +371,7 @@
         collect (vector r g b a x y s) into new-genome
         finally (return (make-instance 'drawing
                           :genome (coerce new-genome 'vector)
-                          :bg-genome nil
+                          :bg-genome (make-array '(0) :fill-pointer 0)
                           :gene-type (gene-type drawing)
                           :fitness (fitness drawing)
                           :png (zpng:copy-png (png drawing))
@@ -377,28 +379,44 @@
                           :width width :height height))))
 
 
+
 (defun write-pdf (drawing &optional (path "tmp.pdf"))
   (pdf:with-document ()
     (pdf:with-page ()
-      (pdf:set-rgb-fill 0 0 0)
-      (pdf:rectangle 0 0 (elt (pdf::bounds pdf:*page*) 2)
-                     (elt (pdf::bounds pdf:*page*) 3))
-      (pdf:close-and-fill)
-      (loop with width = (elt (pdf::bounds pdf:*page*) 2)
-            with height = (elt (pdf::bounds pdf:*page*) 3)
-            with radius = (/ (+ width height) 2)
-            for gene across (genome drawing)
-            for r = (elt gene 0)
-            for g = (elt gene 1)
-            for b = (elt gene 2)
-            for a = (coerce (elt gene 3) 'float)
-            for x = (elt gene 4)
-            for y = (- 1 (elt gene 5))
-            for s = (elt gene 6)
-            do (pdf:set-rgb-fill r g b)
-               (pdf:set-fill-transparency a)
-               (pdf:circle (* x width) (* y height) (* s radius))
-               (pdf:close-and-fill)))
+      (let* (;; we're assuming A4 portrait here
+             (margin 16)
+             (x-bound (elt (pdf::bounds pdf:*page*) 2))
+             (y-bound (elt (pdf::bounds pdf:*page*) 3))
+             (size (- x-bound (* 2  margin)))
+             (x-offset margin)
+             (y-offset (- y-bound size margin)))
+        (pdf:set-rgb-fill 0 0 0)
+        (pdf:set-fill-transparency 1.0)
+        (pdf:rectangle x-offset y-offset size size)
+        (pdf:close-and-fill)
+        (loop with scale = size
+              for gene across (genome drawing)
+              for r = (elt gene 0)
+              for g = (elt gene 1)
+              for b = (elt gene 2)
+              for a = (coerce (elt gene 3) 'float)
+              for x = (elt gene 4)
+              for y = (- 1 (elt gene 5))
+              for s = (elt gene 6)
+              do (pdf:set-rgb-fill r g b)
+                 (pdf:set-fill-transparency a)
+                 (pdf:circle (+ (* x scale) x-offset)
+                             (+ (* y scale) y-offset)
+                             (* s scale))
+                 (pdf:close-and-fill))
+        ;; redraw white margins since the circles aren't clipped
+        (pdf:set-rgb-fill 1 1 1)
+        (pdf:set-fill-transparency 1.0)
+        (pdf:rectangle 0 (- y-bound margin) x-bound margin)   ; top
+        (pdf:rectangle 0 y-offset x-offset size)              ; left
+        (pdf:rectangle (+ size margin) y-offset margin size)  ; right
+        (pdf:rectangle 0 0 x-bound y-offset)                  ; bottom
+        (pdf:close-and-fill)))
     (pdf:write-document path)))
 
 
@@ -437,10 +455,10 @@
 ;;        'tmp.dat' using 1:4 t 'draw size' w l axes x1y2
 (defun write-gnuplot-data (&optional (path "tmp.dat"))
   (with-open-file (f path :direction :output :if-exists :supersede)
-	(loop for lst across *gnuplot-data*
-	   do (format f "~D ~F ~D ~D~%"
-				  (getf lst :generation) (getf lst :fitness)
-				  (getf lst :genome-length) (getf lst :size)))))
+    (loop for lst across *gnuplot-data*
+       do (format f "~D ~F ~D ~D~%"
+                  (getf lst :generation) (getf lst :fitness)
+                  (getf lst :genome-length) (getf lst :size)))))
 
 
 ;;; Main Program
@@ -459,11 +477,11 @@
           for gen from 1
           for new-drw = (evolve-drawing ref drw)
           do (when (> (fitness new-drw) (fitness drw))
-			   (vector-push-extend (list :generation gen
-										 :fitness (fitness new-drw)
-										 :genome-length genome-length
-										 :size size)
-								   *gnuplot-data*)
+               (vector-push-extend (list :generation gen
+                                         :fitness (fitness new-drw)
+                                         :genome-length genome-length
+                                         :size size)
+                                   *gnuplot-data*)
                (setf last-change gen
                      drw         new-drw)
                ;(save-drawing drw png-out-path)
@@ -478,10 +496,11 @@
                      size             (if (<= size min-size)
                                           min-size
                                           (ceiling (/ size 2)))
-                     (genome drw)     (create-random-genome ref genome-length
-                                                            size type)
+                     ;; must come before the (genome drw) setf!
                      (bg-genome drw)  (concatenate 'vector (bg-genome drw)
                                                            (genome drw))
+                     (genome drw)     (create-random-genome ref genome-length
+                                                            size type)
                      (background drw) (zpng:copy-png (png drw))
                      drw              (evolve-drawing ref drw))
                (format t "*** Switching to genome-length=~D and size=~D.~%"
