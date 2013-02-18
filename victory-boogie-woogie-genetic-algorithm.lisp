@@ -491,7 +491,9 @@
              (when (> dgen 512)  ; FIXME turn 512 into a variable
                (save-drawing drw "tmp-new-bg.png")
                (setf dgen             0
-                     genome-length    (* 2 genome-length)
+                     genome-length    (if (<= size min-size)
+										  genome-length
+										  (* 2 genome-length))
                      last-change      gen
                      size             (if (<= size min-size)
                                           min-size
