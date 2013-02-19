@@ -2,6 +2,7 @@
 ;;;;
 ;;;; The painting has been turned 45 degrees clockwise!
 ;;;;
+;;;; o Nice end fitness seems to be 8.0e-10.
 ;;;; o This looks really nice: (main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :size 512 :genome-length 8 :min-size 2 :max-generations 3000000)
 ;;;; o Type should be hidden in drawing class and not in fn args.
 ;;;; o We need a way to make a genome resolution independent again.
@@ -464,8 +465,8 @@
 ;;; Main Program
 
 (defun main (reference-path &key (max-generations 256000) (genome-length 4)
-                                 (size 256) (min-size 1) (type :circles)
-                                 (png-out-path "tmp.png"))
+                                 (size 256) (min-size 1) (max-dgen 512)
+                                 (type :circles) (png-out-path "tmp.png"))
   (setf *gnuplot-data* (make-array '(0) :fill-pointer 0))
   (let* ((ref (read-png reference-path))
          (drw (create-random-drawing ref genome-length size type)))
@@ -487,13 +488,12 @@
                ;(save-drawing drw png-out-path)
                (format t "[~8D/~3D] ~S size=~D~%" gen dgen drw size))
              (setf dgen (- gen last-change))
-             ;; 256 was maybe too little but 512 seems too much (for 256x256)
-             (when (> dgen 512)  ; FIXME turn 512 into a variable
+             (when (> dgen max-dgen)
                (save-drawing drw "tmp-new-bg.png")
                (setf dgen             0
                      genome-length    (if (<= size min-size)
-										  genome-length
-										  (* 2 genome-length))
+                                          genome-length
+                                          (* 2 genome-length))
                      last-change      gen
                      size             (if (<= size min-size)
                                           min-size
