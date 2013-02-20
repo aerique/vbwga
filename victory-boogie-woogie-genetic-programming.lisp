@@ -24,6 +24,26 @@
 (in-package :vbw)
 
 
+;;; Stubs to prevent compile warnings.
+
+(defun calculate-n-nodes (tree) (declare (ignore tree)))
+
+
+;;; Classes
+
+(defclass program ()
+  ((fitness :accessor fitness :initarg :fitness)
+   (tree    :accessor tree    :initarg :tree)))
+
+
+;;; Methods
+
+(defmethod print-object ((obj program) stream)
+  (print-unreadable-object (obj stream :type t)
+    (format stream "fitness:~,5E nodes:~D"
+            (fitness obj) (calculate-n-nodes (tree obj)))))
+
+
 ;;; Functions
 
 ;; SUBTYPEP!
@@ -133,11 +153,37 @@
         (t (error "Unknown program creation process: ~S" type))))
 
 
-(defun create-population (functions terminals
-                          &key (max-arity 4) (max-depth 4) (size 16)
-                               (type :ramped-half-half))
+(defun empty-png (width height)
+  (make-instance 'zpng:png :color-type :truecolor :width width :height height))
+
+
+(defun make-function (body)
+  (let (;; supress compilation warnings and errors
+        (*error-output* (make-broadcast-stream)))  ; thanks stassats!
+    (eval (append '(lambda (=png=)) (list body)))))
+
+
+(defun run-program (reference body)
+  (let ((png (empty-png (zpng:width reference) (zpng:height reference))))
+    (handler-case ;; make-function hangs sometimes, not sure why
+                  ;; seems to be on bignums / big calculations or something
+                  ;; not sure if it is a hang or extreme slowness
+                  ;(cl-user::with-timeout 3 (funcall (make-function body) png))
+                  (cl-user::with-timeout 0.1
+                    (funcall (make-function body) png))
+      (error () (return-from run-program nil))
+      (sb-ext:timeout ()
+        (return-from run-program nil)))
+        ;(break "Timeout occured")))
+    png))
+
+
+(defun create-population (reference functions terminals
+                          &key (debug nil) (max-arity 4) (max-depth 2)
+                               (size 16) (type :ramped-half-half))
   (loop with vec = (make-array (list size))
-        for i from 0 below size
+        with i = 0
+        until (>= i size)
         for program = (cond ((equal type :full)
                              (create-program functions terminals :type :full
                                              :max-arity max-arity
@@ -157,7 +203,16 @@
                                              :max-depth max-depth))
                             (t (error "Unknown population creation process: ~S"
                                       type)))
-        do (setf (elt vec i) program)
+        for png = (run-program reference program)
+        for fitness = (if png
+                          (calculate-fitness reference png)
+                          nil)
+        do (when fitness
+             (let ((obj (make-instance 'program :fitness fitness
+                                       :tree program)))
+               (setf (elt vec i) obj)
+               (when debug (format t "[~D/~D] ~S~%" (1+ i) size obj))
+               (incf i)))
         finally (return vec)))
 
 
@@ -244,11 +299,8 @@
 
 
 (defun random255 ()
+  "Returns an integer between 0 and 255 (inclusive)."
   (random 256))
-
-
-(defun empty-png (width height)
-  (make-instance 'zpng:png :color-type :truecolor :width width :height height))
 
 
 (defun read-png (path)
@@ -272,48 +324,150 @@
   (zpng:write-png png path))
 
 
-;(defun make-function (tree terminals)
-;  "Turns TREE into a function object."
-;  (let ((*error-output* (make-broadcast-stream))  ; thanks stassats!
-;        (input-args (loop for terminal in terminals
-;                          when (getf terminal :input)
-;                            collect (getf terminal :terminal))))
-;    ;(eval (append1 '(lambda (=input=)) tree))))
-;    (eval (append1 `(lambda ,input-args) tree))))
+(defun calculate-n-nodes (tree)
+  "Returns the number of nodes in TREE, including the root node and leaves."
+  (let ((nodes 1))
+    (labels ((traverse-nodes (subtree)
+               (loop for node in subtree
+                     do (incf nodes)
+                        (when (listp node)
+                          (traverse-nodes node)))))
+      (traverse-nodes tree))
+    nodes))
 
-(defun make-function (body)
-  (eval (append '(lambda (=png=)) (list body))))
+
+(defun random-node (tree)
+  "Returns a random node from TREE."
+  (let* ((index 1)
+         (nodes-1 (- (calculate-n-nodes tree) 1))
+         (random-node (+ (random nodes-1) 1)))
+    (labels ((traverse-nodes (subtree)
+               (loop for node in subtree
+                     do (when (= index random-node)
+                          (return-from random-node (list :index index
+                                                         :node node)))
+                        (incf index)
+                        (when (listp node)
+                          (traverse-nodes node)))))
+      (traverse-nodes tree))))
 
 
-(defun run-program (body &optional (width 256) (height 256))
-  (let ((png (empty-png width height)))
-    (funcall (make-function body) png)
-    png))
+(defun replace-node (tree node-index new-node)
+  "Returns a new tree with NEW-NODE at NODE-INDEX of TREE."
+  (let ((index 0))
+    (labels ((traverse-nodes (subtree)
+               (loop for node in subtree
+                     do (incf index)
+                     when (= index node-index)
+                       collect new-node
+                     when (and (/= index node-index)
+                               (not (listp node)))
+                       collect node
+                     when (and (/= index node-index)
+                               (listp node))
+                       collect (traverse-nodes node))))
+      (traverse-nodes tree))))
+
+
+(defun crossover (tree1 tree2 &key (debug nil))
+  "Returns a new tree similar to TREE1 but with a random node replaced by a
+  random node from TREE2."
+  (let ((rnode1 (random-node tree1))
+        (rnode2 (random-node tree2)))
+    (when debug
+      (format t "tree1: ~S~%tree2: ~S~%rnode1: ~S~%rnode2: ~S~%"
+              tree1 tree2 rnode1 rnode2))
+    (replace-node tree1 (getf rnode1 :index) (getf rnode2 :node))))
+
+
+(defun mutate (tree functions terminals &key (debug nil))
+  "Replaces a random node in TREE with a random tree.
+  Currently always calls CREATE-PROGRAM with :TYPE :GROW internally."
+  (let ((rtree (create-program functions terminals :type :grow))
+        (rnode (random-node tree)))
+    (when debug
+      (format t "tree: ~S~%rtree: ~S~%rnode: ~S~%" tree rtree rnode))
+    (replace-node tree (getf rnode :index) rtree)))
+
+
+(defun tournament-selection (population &optional (n-participants 4))
+  (loop with len = (length population)
+        with indexes = nil
+        with i = 0
+        until (>= i n-participants)
+        for random-nr = (random len)
+        do (unless (member random-nr indexes)
+             (push random-nr indexes)
+             (incf i))
+        finally (return (elt (sort (loop for index in indexes
+                                         collect (elt population index))
+                                   (lambda (a b)
+                                     (> (fitness a) (fitness b))))
+                             0))))
+
+
+(defun evolve-population (reference population functions terminals
+                          &optional (n-mates 8))
+  "N-MATES must be even!"
+  (let ((p (make-array (list (length population))
+                       :fill-pointer (length population)
+                       :initial-contents population))
+        (trees (loop with mates = (loop repeat n-mates
+                                        collect (tournament-selection
+                                                 population))
+                     for i from 0 below n-mates by 2
+                     for a = (elt mates i)
+                     for b = (elt mates (1+ i))
+                     for parent = (if (> (fitness a) (fitness b)) a b)
+                     for mate   = (if (> (fitness a) (fitness b)) b a)
+                     collect (if (< (random 100) 90)
+                     ;collect (if (< (random 100) 50)
+                                 (crossover (tree parent) (tree mate))
+                                 (mutate (tree parent) functions terminals)))))
+    (loop for tree in trees
+          for png = (run-program reference tree)
+          for fitness = (if png
+                            (calculate-fitness reference png)
+                            0)
+          do (vector-push-extend (make-instance 'program :fitness fitness
+                                                :tree tree)
+                                 p))
+    (subseq (sort p (lambda (a b) (> (fitness a) (fitness b))))
+            0 (length population))))
 
 
 ;;; Main Program
 
-(defun main (&key (max-arity 4) (max-depth 4) (size 16)
-                  (type :ramped-half-half))
-  (let* ((functions  '((:function +     :type integer :args (&rest integer))
-                       (:function -     :type integer :args (&rest integer))
-                       (:function *     :type integer :args (&rest integer))
-                       (:function progn :type t       :args (&rest t))
-                       ;; more progns!
-                       (:function progn :type t       :args (&rest t))
-                       (:function draw-filled-circle :type t
-                        :args ((terminal png) integer integer integer integer
-                               integer integer integer))
-                       ))
+(defun main (reference-path &key (debug nil) (max-arity 4) (max-depth 2)
+                                 (max-generations 32) (size 16)
+                                 (type :ramped-half-half))
+  (let* ((ref (read-png reference-path))
+         population
+         (functions '((:function +     :type integer :args (&rest integer))
+                      (:function -     :type integer :args (&rest integer))
+                      (:function *     :type integer :args (&rest integer))
+                      (:function progn :type t       :args (&rest t))
+                      ;; more progns!
+                      (:function progn :type t       :args (&rest t))
+                      (:function draw-filled-circle :type t
+                       :args ((terminal png) integer integer integer integer
+                              integer integer integer))))
          ;; =foo= denotes external inputs
-         (terminals  '(;; these should be replaced by #'random10
-                       (:terminal 0 :type integer) (:terminal 1 :type integer)
-                       (:terminal 1 :type integer) (:terminal 2 :type integer)
-                       (:terminal 3 :type integer) (:terminal 4 :type integer)
-                       (:terminal 5 :type integer) (:terminal 6 :type integer)
-                       (:terminal 7 :type integer) (:terminal 8 :type integer)
-                       (:terminal 9 :type integer)
-                       ;(:terminal (random255) :type integer)
-                       (:terminal =png= :type png))))
-    (create-population functions terminals :max-arity max-arity
-                       :max-depth max-depth :size size :type type)))
+         (terminals '((:terminal 0 :type integer) (:terminal 1 :type integer)
+                      (:terminal 1 :type integer) (:terminal 2 :type integer)
+                      (:terminal 3 :type integer) (:terminal 4 :type integer)
+                      (:terminal 5 :type integer) (:terminal 6 :type integer)
+                      (:terminal 7 :type integer) (:terminal 8 :type integer)
+                      (:terminal 9 :type integer)
+                      ;(:terminal (random255) :type integer)
+                      (:terminal =png= :type png))))
+    (setf population (create-population ref functions terminals :debug debug
+                                      :max-arity max-arity :max-depth max-depth
+                                      :size size :type type))
+    (loop repeat max-generations
+          for i from 1
+          for new-population = (evolve-population ref population functions
+                                                  terminals)
+          do (format t "[~D] ~S~%" i (elt new-population 0))
+             (setf population new-population))
+    population))
