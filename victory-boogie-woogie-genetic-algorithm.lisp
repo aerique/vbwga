@@ -2,7 +2,7 @@
 ;;;;
 ;;;; The painting has been turned 45 degrees clockwise!
 ;;;;
-;;;; o Nice end fitness seems to be 8.0e-10.
+;;;; o Nice end fitness seems to be 9.0e-10.
 ;;;; o This looks really nice: (main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :size 512 :genome-length 8 :min-size 2 :max-generations 3000000)
 ;;;; o Type should be hidden in drawing class and not in fn args.
 ;;;; o We need a way to make a genome resolution independent again.
@@ -466,7 +466,8 @@
 
 (defun main (reference-path &key (max-generations 256000) (genome-length 4)
                                  (size 256) (min-size 1) (max-dgen 512)
-                                 (type :circles) (png-out-path "tmp.png"))
+                                 (target-fitness nil) (type :circles)
+                                 (png-out-path "tmp.png"))
   (setf *gnuplot-data* (make-array '(0) :fill-pointer 0))
   (let* ((ref (read-png reference-path))
          (drw (create-random-drawing ref genome-length size type)))
@@ -474,7 +475,8 @@
     (save-drawing drw png-out-path)
     (loop with dgen = 0
           with last-change = 0
-          repeat max-generations
+          ;repeat max-generations
+          until (>= (fitness drw) target-fitness)
           for gen from 1
           for new-drw = (evolve-drawing ref drw)
           do (when (> (fitness new-drw) (fitness drw))
