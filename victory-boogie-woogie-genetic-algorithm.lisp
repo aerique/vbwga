@@ -136,7 +136,6 @@
   ((genome     :accessor genome     :initarg :genome)
    (bg-genome  :accessor bg-genome  :initarg :bg-genome)
    (background :accessor background :initarg :background)
-   (gene-type  :reader   gene-type  :initarg :gene-type)
    (fitness    :reader   fitness    :initarg :fitness)
    (png        :reader   png        :initarg :png)
    (width      :reader   width      :initarg :width)
@@ -147,8 +146,8 @@
 
 (defmethod print-object ((obj drawing) stream)
   (print-unreadable-object (obj stream :type t)
-    (format stream "~A fitness:~,5E elements:~D"
-            (gene-type obj) (fitness obj) (length (genome obj)))))
+    (format stream "fitness:~,5E elements:~D"
+            (fitness obj) (length (genome obj)))))
 
 
 ;;; Functions
@@ -172,25 +171,20 @@
 
 
 ;; circles: #(red green blue alpha x y radius)
-;; squares: #(red green blue alpha x y width/2)
-(defun create-random-gene (reference &optional (size 16) (type :circles))
+(defun create-random-gene (reference &optional (size 16))
   (let ((max-rgb (expt 2 (zpng::bpp reference))))
     ;; XXX set max-rgba here?
-    (cond ((or (equal type :circles)
-               (equal type :squares))
-           (vector (random max-rgb) (random max-rgb) (random max-rgb)
-                   (random max-rgb) (random (zpng:width reference))
-                   (random (zpng:height reference)) size))
-          (t (error "Unknown gene type: ~S" type)))))
+    (vector (random max-rgb) (random max-rgb) (random max-rgb) (random max-rgb)
+            (random (zpng:width reference)) (random (zpng:height reference))
+            size)))
 
 
-(defun create-random-genome (reference &optional (length 16) (size 16)
-                                                 (type :circles))
+(defun create-random-genome (reference &optional (length 16) (size 16))
   (when (<= length 0)
     (return-from create-random-genome nil))
   (loop with arr = (make-array (list length))
         for i from 0 below length
-        do (setf (svref arr i) (create-random-gene reference size type))
+        do (setf (svref arr i) (create-random-gene reference size))
         finally (return arr)))
 
 
@@ -252,20 +246,12 @@
           (t                  (modify-position reference gene delta)))))
 
 
-(defun evolve-genome (reference genome &key (modify-percentage 0.01)
-                                            (type :circles))
-  (declare (ignore modify-percentage))
+(defun evolve-genome (reference genome)
   (loop with len = (length genome)
         with new-genome = (copy-seq genome)
-        ;; #'ceiling to make sure at least 1 gene is modified
-        ;repeat (ceiling (* modify-percentage len))
-        ;; just a small fixed amount for now
-        repeat 4
+        repeat 4  ;; hard-coded :-|
         for rnr = (random len)
-        for new-gene = (cond ((or (equal type :circles)
-                                  (equal type :squares))
-                              (evolve-gene reference (elt genome rnr)))
-                             (t (error "Unknown gene type: ~S" type)))
+        for new-gene = (evolve-gene reference (elt genome rnr))
         do (setf (elt new-genome rnr) new-gene)
         finally (return new-genome)))
 
@@ -373,46 +359,18 @@
         finally (return png)))
 
 
-(defun draw-filled-square (png x y width/2 r g b &optional (a +max-rgba+))
-  (when (= width/2 0)
-    (set-pixel-unsafe png x y r g b a)
-    (return-from draw-filled-square))
-  (loop for y0 from (- y width/2) to (+ y width/2)
-        do (draw-horizontal-line png (- x width/2) (+ x width/2) y0 r g b a)))
-
-
-(defun draw-genome-squares (background genome)
-  (loop with png = (zpng:copy-png background)
-        for gene across genome
-        for r = (elt gene 0)
-        for g = (elt gene 1)
-        for b = (elt gene 2)
-        for a = (elt gene 3)
-        for x = (elt gene 4)
-        for y = (elt gene 5)
-        for width/2 = (elt gene 6)
-        do (draw-filled-square png x y width/2 r g b a)
-        finally (return png)))
-
-
-(defun make-drawing (reference background genome bg-genome
-                     &optional (type :circles))
-  (let* ((png (cond ((equal type :circles)
-                     (draw-genome-circles background genome))
-                    ((equal type :squares)
-                     (draw-genome-squares background genome))
-                    (t (error "Unknown gene type: ~S" type))))
+(defun make-drawing (reference background genome bg-genome)
+  (let* ((png (draw-genome-circles background genome))
          (fitness (calculate-fitness reference png)))
-    (make-instance 'drawing :genome genome :bg-genome bg-genome :gene-type type
+    (make-instance 'drawing :genome genome :bg-genome bg-genome
                    :fitness fitness :png png :background background
                    :width (zpng:width png) :height (zpng:height png))))
 
 
 (defun evolve-drawing (reference drawing)
-  (let ((new-genome (evolve-genome reference (genome drawing)
-                                   :type (gene-type drawing))))
-    (make-drawing reference (background drawing) new-genome (bg-genome drawing)
-                  (gene-type drawing))))
+  (let ((new-genome (evolve-genome reference (genome drawing))))
+    (make-drawing reference (background drawing) new-genome
+                  (bg-genome drawing))))
 
 
 (defun empty-png (reference)
@@ -421,11 +379,10 @@
                  :height (zpng:height reference)))
 
 
-(defun create-random-drawing (reference &optional (length 128) (size 16)
-                                                  (type :circles))
+(defun create-random-drawing (reference &optional (length 128) (size 16))
   (make-drawing reference (empty-png reference)
-                (create-random-genome reference length size type)
-                (make-array '(0) :fill-pointer 0) type))
+                (create-random-genome reference length size)
+                (make-array '(0) :fill-pointer 0)))
 
 
 (defun draw-resolution-independent-genome-circles (genome width height)
@@ -446,7 +403,6 @@
     (draw-genome-circles background new-genome)))
 
 
-;; XXX - only correct for circles and squares currently
 (defun resolution-independent-drawing (drawing)
   (loop with width = (width drawing)
         with height = (height drawing)
@@ -463,12 +419,10 @@
         finally (return (make-instance 'drawing
                           :genome (coerce new-genome 'vector)
                           :bg-genome (make-array '(0) :fill-pointer 0)
-                          :gene-type (gene-type drawing)
                           :fitness (fitness drawing)
                           :png (zpng:copy-png (png drawing))
                           :background (zpng:copy-png (background drawing))
                           :width width :height height))))
-
 
 
 (defun write-pdf (drawing &optional (path "tmp.pdf"))
@@ -539,10 +493,10 @@
 ;;; Main Program
 
 (defun main (reference-path &key (genome-length 4) (min-size 2) (size 512)
-                                 (target-fitness 9e-10) (type :circles)
-                                 (max-dgen 448) (png-out-path "tmp.png"))
+                                 (target-fitness 9e-10) (max-dgen 448)
+                                 (png-out-path "tmp.png"))
   (let* ((ref (read-png reference-path))
-         (drw (create-random-drawing ref genome-length size type)))
+         (drw (create-random-drawing ref genome-length size)))
     (format t "[        /   ] ~S size=~D~%" drw size)
     (save-drawing drw png-out-path)
     (loop with dgen = 0
@@ -575,7 +529,7 @@
                      (bg-genome drw)  (concatenate 'vector (bg-genome drw)
                                                            (genome drw))
                      (genome drw)     (create-random-genome ref genome-length
-                                                            size type)
+                                                            size)
                      (background drw) (zpng:copy-png (png drw))
                      drw              (evolve-drawing ref drw))
                (format t "*** Switching to genome-length=~D and size=~D.~%"
