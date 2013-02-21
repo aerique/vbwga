@@ -1,42 +1,119 @@
-;;;; victory-boogie-woogie-genetic-algorithm.lisp
+;;;;- victory-boogie-woogie-genetic-algorithm.lisp
+;;;;-
+;;;;- This source file can be converted to Markdown using src2markup:
+;;;;- https://github.com/aerique/src2markup#readme
+;;;;-
+;;;; # Victory Boogie Woogie Contest
 ;;;;
-;;;; The painting has been turned 45 degrees clockwise!
+;;;; This is my first entry for the [Victory Boogie Woogie (VBW)
+;;;; contest](http://www.elegant.setup.nl/). It tries to reproduce the
+;;;; painting using a reference picture and a [genetic algorithm
+;;;; (GA)](https://en.wikipedia.org/wiki/Genetic_algorithm).
 ;;;;
-;;;; o Nice end fitness seems to be 9.0e-10.
-;;;; o This looks really nice: (main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :size 512 :genome-length 8 :min-size 2 :max-generations 3000000)
-;;;; o Type should be hidden in drawing class and not in fn args.
-;;;; o We need a way to make a genome resolution independent again.
-;;;; o :circles is nice at 256x256 after 512k generations (and size = 2).
-;;;;   - at 1024k+ generations straight lines and squares start to be made.
-;;;; o :squares is nice at 256x256 after 1024k generations.
-;;;; o :circles needs 2048000 gens at 512x512 and 8 elements and 512 radius.
+;;;; This approach is inspired by my earlier work (which has not been
+;;;; released yet) to find a way to make graphical content for an iOS
+;;;; game without the need for an artist: take photographs, run the GA
+;;;; over it and, voila: content!
 ;;;;
-;;;; profiling:
-;;;; o (require 'sb-sprof)
-;;;; o (sb-sprof:with-profiling (:report :flat :loop nil :reset t
-;;;;                             :sample-interval 0.001)
-;;;;     <body>)
+;;;; This earlier work was in turn inspired by Roger Alsing's seminal
+;;;; blog about
+;;;; [reproducing the Mona Lisa using polygons](http://rogeralsing.com/2008/12/07/genetic-programming-evolution-of-mona-lisa/).
+;;;; Although he calls it
+;;;; "[genetic programming](https://en.wikipedia.org/wiki/Genetic_programming)"
+;;;; which it is *not*.
 ;;;;
-;;;; To add new gene-types:
-;;;; o Add DRAW-GENOME-<gene-type>
-;;;; o Add DRAW-<gene-type> or DRAW-FILLED-<gene-type>
-;;;; o Add gene-type to #'cond in:
-;;;;   - CREATE-RANDOM-GENE
-;;;;   - EVOLVE-GENOME
-;;;;   - MAKE-DRAWING
+;;;; My work differs from Roger Alsing's approach in that it doesn't try
+;;;; to make an exact reproduction using polygons (which can take almost
+;;;; any form) but rather a reinterpretation using only one kind of form.
+;;;; Circles in this case, but I have experimented with squares and other
+;;;; forms as well.
+;;;;
+;;;; My intent was to make something that would be similar to the
+;;;; [Pointillism](https://en.wikipedia.org/wiki/Pointillism) style used
+;;;; by classical painters.
+;;;;
+;;;; *Note*: The reference picture has been rotated 45 degrees
+;;;; clockwise! This has been done to make optimal use of the available
+;;;; space, since the algorithm is slow enough as it is. Once printed
+;;;; the printout should be rotated 45 degrees anti-clockwise.
+;;;;
+;;;; ## Installation & Running
+;;;;
+;;;; This program uses [SBCL](http://www.sbcl.org/) and
+;;;; [Quicklisp](http://www.quicklisp.org/).
+;;;;
+;;;; Depending on your machine it can take several hours to more than a
+;;;; day for the drawing to finish! For this reason representative
+;;;; output has been supplied with this contest entry as
+;;;; `vbw-example.pdf`, although no two results will ever be the same.
+;;;;
+;;;; While running the program will print progress output in the
+;;;; following format: "[X/Y] #<DRAWING CIRCLES fitness:Z elements:A>
+;;;; size=B".
+;;;;
+;;;; * **X**: current generation,
+;;;; * **Y**: number of generations without any progress,
+;;;; * **Z**: fitness of the current best drawing,
+;;;; * **A**: number of genomes currently used,
+;;;; * **B**: brush size.
+;;;;
+;;;; By default the target fitness has been set to 9.0e-10 so whenever Z
+;;;; goes over that number the drawing is done and a `vbw.pdf` will be
+;;;; written to disk.
+;;;;
+;;;; Also, while the program is running a picture of the current
+;;;; progress will be saved every 1000 generations as `tmp.png`. If you
+;;;; use a picture viewer that refreshes whenever `tmp.png` has changed
+;;;; you will have a live update of the progress.
+;;;;
+;;;; ### Unix (Linux, Ubuntu, etc.)
+;;;;
+;;;; 1. Preferably install SBCL using your distribution's package
+;;;;    manager or otherwise use an archive from the SBCL website;
+;;;; 2. [Install Quicklisp](http://www.quicklisp.org/beta/#installation)
+;;;;    (make sure you do `(ql:add-to-init-file)`);
+;;;; 3. Run this program using SBCL: `sbcl --load <stub>`;
+;;;; 4. Wait...
+;;;; 5. Once finished the result will be saved in `vbw.pdf`.
+;;;;
+;;;; ### OS X
+;;;;
+;;;; 1. Install SBCL using [Homebrew](http://mxcl.github.com/homebrew/);
+;;;; 2. [Install Quicklisp](http://www.quicklisp.org/beta/#installation)
+;;;;    (make sure you do `(ql:add-to-init-file)`);
+;;;; 3. Run this program using SBCL: `sbcl --load
+;;;;    victory-boogie-woogie-genetic-algorithm.lisp`;
+;;;; 4. Wait...
+;;;; 5. Once finished the result will be saved in `vbw.pdf`.
+;;;;
+;;;; ### Windows
+;;;;
+;;;; If you're using Window you are going to have a hard time running
+;;;; this program but here are the instructions if you are feeling
+;;;; adventurous:
+;;;;
+;;;; 1. Install the X86 SBCL from: http://www.sbcl.org/platform-table.html;
+;;;; 2. [Install Quicklisp](http://www.quicklisp.org/beta/#installation)
+;;;;    (make sure you do `(ql:add-to-init-file)`);
+;;;; 3. Go to the commandline (type `cmd` in the "Search programs and
+;;;;    files" input box of the Start menu;
+;;;; 4. Run this program using SBCL: `sbcl --load <stub>`;
+;;;; 5. Pray it all works;
+;;;; 6. Wait...
+;;;; 7. Once finished the result will be saved in `vbw.pdf`.
+
+;; We **need* Quicklisp!
+(unless (find-package :quicklisp)
+  (format *error-output* "~&Please install Quicklisp! See the manual for instructions.~%"))
+
 
 ;;; Packages
 
 (in-package :cl)
 
-;(asdf:oos 'asdf:load-op :eager-future2)
-;(rename-package :eager-future2 :eager-future2 '(:ef))
-
-(asdf:oos 'asdf:load-op :cl-pdf)
-(asdf:oos 'asdf:load-op :cl-store)
-(asdf:oos 'asdf:load-op :png-read)
-(asdf:oos 'asdf:load-op :zpng)
-
+(ql:quickload :cl-pdf)
+(ql:quickload :png-read)
+(ql:quickload :zpng)
 
 (defpackage :victory-boogie-woogie
   (:nicknames :vbw)
@@ -47,9 +124,10 @@
 
 ;;; Globals
 
+;; The maximum value each of the red, green, blue and alpha components
+;; can take. This is more or less dictated by
+;; [ZPNG](http://www.xach.com/lisp/zpng/).
 (defparameter +max-rgba+ 255)
-
-(defparameter *gnuplot-data* nil)
 
 
 ;;; Classes
@@ -76,7 +154,7 @@
 ;;; Functions
 
 (defun calculate-fitness (reference png)
-  "Both REFERENCE and PNG are ZPNG objects."
+  "Both REFERENCE and PNG should be ZPNG objects."
   (when (or (not (= (zpng:width reference) (zpng:width png)))
             (not (= (zpng:height reference) (zpng:height png))))
     (error "dimensions of REFERENCE (~Dx~D) and PNG (~Dx~D) not equal"
@@ -192,12 +270,21 @@
         finally (return new-genome)))
 
 
-;; This is from either:
-;;     - http://www.codeguru.com/cpp/cpp/algorithms/general/article.php/c15989/Tip-An-Optimized-Formula-for-Alpha-Blending-Pixels.htm
-;; or
-;;     - https://www.gamedev.net/topic/34688-alpha-blend-formula/
-(defun set-pixel-unsafe (png x y r g b &optional (a +max-rgba+)
-                                                 (max-rgb +max-rgba+))
+;; One of the two optimized functions so it doesn't look very pretty.
+;; It is called "unsafe" because no checks are made to see whether any
+;; of the input arguments fall within the allowed parameters. You are
+;; supposed to do this in a higher level function.
+;;
+;; Since no checks are made and this function is the inner loop of the
+;; program we gain a significant speed increase. A higher level function
+;; would call this function tens or hundreds of times while it only has
+;; to check the bounds once.
+;;
+;; The alpha blending code is from either:
+;; * http://www.codeguru.com/cpp/cpp/algorithms/general/article.php/c15989/Tip-An-Optimized-Formula-for-Alpha-Blending-Pixels.htm or
+;; * https://www.gamedev.net/topic/34688-alpha-blend-formula/
+(defun set-pixel-unsafe (png x y r g b
+                         &optional (a +max-rgba+) (max-rgb +max-rgba+))
   "PNG is a ZPNG object.
   X and Y are integers, must be greater or equal to 0 and less than the
   width and height of the PNG.
@@ -228,6 +315,9 @@
                 (aref data index+2) (ash (+ src-b dst-b) -8))))))
 
 
+;; The other optimized function since it is one step above the inner
+;; loop and profiling showed speed gains could be made (and were made)
+;; here.
 (defun draw-horizontal-line (png x0 x1 y r g b &optional (a +max-rgba+))
   ;; (safety 0) gets rid of some extra optimization notes
   (declare (optimize (safety 0) (speed 3))
@@ -446,52 +536,33 @@
   (write-png (png drawing) path))
 
 
-;; In gnuplot do:
-;; - set format x "%.0sk"
-;; - set y2tics
-;; - set format y2 "%g"
-;; - set logscale y2
-;; - plot 'tmp.dat' using 1:2 t 'fitness'   w l,           \
-;;        'tmp.dat' using 1:3 t '#genomes'  w l axes x1y2, \
-;;        'tmp.dat' using 1:4 t 'draw size' w l axes x1y2
-(defun write-gnuplot-data (&optional (path "tmp.dat"))
-  (with-open-file (f path :direction :output :if-exists :supersede)
-    (loop for lst across *gnuplot-data*
-       do (format f "~D ~F ~D ~D~%"
-                  (getf lst :generation) (getf lst :fitness)
-                  (getf lst :genome-length) (getf lst :size)))))
-
-
 ;;; Main Program
 
-(defun main (reference-path &key (max-generations 256000) (genome-length 4)
-                                 (size 256) (min-size 1) (max-dgen 512)
-                                 (target-fitness nil) (type :circles)
-                                 (png-out-path "tmp.png"))
-  (setf *gnuplot-data* (make-array '(0) :fill-pointer 0))
+(defun main (reference-path &key (genome-length 4) (min-size 2) (size 512)
+                                 (target-fitness 9e-10) (type :circles)
+                                 (max-dgen 448) (png-out-path "tmp.png"))
   (let* ((ref (read-png reference-path))
          (drw (create-random-drawing ref genome-length size type)))
     (format t "[        /   ] ~S size=~D~%" drw size)
     (save-drawing drw png-out-path)
     (loop with dgen = 0
           with last-change = 0
-          ;repeat max-generations
           until (>= (fitness drw) target-fitness)
           for gen from 1
           for new-drw = (evolve-drawing ref drw)
-          do (when (> (fitness new-drw) (fitness drw))
-               (vector-push-extend (list :generation gen
-                                         :fitness (fitness new-drw)
-                                         :genome-length genome-length
-                                         :size size)
-                                   *gnuplot-data*)
+          do ;; Check if the new drawing is better than the current
+             ;; best, if so: start using the new drawing.
+             (when (> (fitness new-drw) (fitness drw))
                (setf last-change gen
                      drw         new-drw)
-               ;(save-drawing drw png-out-path)
                (format t "[~8D/~3D] ~S size=~D~%" gen dgen drw size))
              (setf dgen (- gen last-change))
+             ;; If no improvements have been made for `dgen` generations
+             ;; we double the number of genes and halve the brush size.
+             ;; (Unless we are using the smallest brush already.)
+             ;; We also start with a fresh genome and use what we have
+             ;; made so far as its background.
              (when (> dgen max-dgen)
-               (save-drawing drw "tmp-new-bg.png")
                (setf dgen             0
                      genome-length    (if (<= size min-size)
                                           genome-length
@@ -500,7 +571,7 @@
                      size             (if (<= size min-size)
                                           min-size
                                           (ceiling (/ size 2)))
-                     ;; must come before the (genome drw) setf!
+                     ;; **Note!**: must come before the (genome drw) setf!
                      (bg-genome drw)  (concatenate 'vector (bg-genome drw)
                                                            (genome drw))
                      (genome drw)     (create-random-genome ref genome-length
@@ -513,3 +584,7 @@
                (save-drawing drw png-out-path)))
     (save-drawing drw png-out-path)
     drw))
+
+
+(write-pdf (resolution-independent-drawing (main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png"))
+           "vbw.pdf")
