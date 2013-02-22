@@ -7,8 +7,8 @@
 ;;;;
 ;;;; This is my first entry for the [Victory Boogie Woogie (VBW)
 ;;;; contest](http://www.elegant.setup.nl/). It tries to reproduce the
-;;;; painting using a reference picture and a [genetic algorithm
-;;;; (GA)](https://en.wikipedia.org/wiki/Genetic_algorithm).
+;;;; painting using a reference picture and a [genetic
+;;;; algorithm](https://en.wikipedia.org/wiki/Genetic_algorithm) (GA).
 ;;;;
 ;;;; This approach is inspired by my earlier work (which has not been
 ;;;; released yet) to find a way to make graphical content for an iOS
@@ -28,7 +28,7 @@
 ;;;; Circles in this case, but I have experimented with squares and other
 ;;;; forms as well.
 ;;;;
-;;;; My intent was to make something that would be similar to the
+;;;; The intent was to make something that would be similar to the
 ;;;; [Pointillism](https://en.wikipedia.org/wiki/Pointillism) style used
 ;;;; by classical painters.
 ;;;;
@@ -48,8 +48,8 @@
 ;;;; `vbw-example.pdf`, although no two results will ever be the same.
 ;;;;
 ;;;; While running the program will print progress output in the
-;;;; following format: "[X/Y] #<DRAWING CIRCLES fitness:Z elements:A>
-;;;; size=B".
+;;;; following format: "[X/Y] #&lt;DRAWING CIRCLES fitness:Z
+;;;; elements:A&gt; size=B".
 ;;;;
 ;;;; * **X**: current generation,
 ;;;; * **Y**: number of generations without any progress,
@@ -59,12 +59,10 @@
 ;;;;
 ;;;; By default the target fitness has been set to 9.0e-10 so whenever Z
 ;;;; goes over that number the drawing is done and a `vbw.pdf` will be
-;;;; written to disk.
-;;;;
-;;;; Also, while the program is running a picture of the current
-;;;; progress will be saved every 1000 generations as `tmp.png`. If you
-;;;; use a picture viewer that refreshes whenever `tmp.png` has changed
-;;;; you will have a live update of the progress.
+;;;; written to disk. Also, while the program is running a picture of the
+;;;; current progress will be saved every 1000 generations as `tmp.png`.
+;;;; If you use a picture viewer that refreshes whenever `tmp.png` has
+;;;; changed you will have a live update of the progress.
 ;;;;
 ;;;; ### Unix (Linux, Ubuntu, etc.)
 ;;;;
@@ -92,7 +90,7 @@
 ;;;; this program but here are the instructions if you are feeling
 ;;;; adventurous:
 ;;;;
-;;;; 1. Install the X86 SBCL from: http://www.sbcl.org/platform-table.html;
+;;;; 1. Install SBCL (x86) from: http://www.sbcl.org/platform-table.html;
 ;;;; 2. [Install Quicklisp](http://www.quicklisp.org/beta/#installation)
 ;;;;    (make sure you do `(ql:add-to-init-file)`);
 ;;;; 3. Go to the commandline (type `cmd` in the "Search programs and
@@ -102,9 +100,16 @@
 ;;;; 6. Wait...
 ;;;; 7. Once finished the result will be saved in `vbw.pdf`.
 
-;; We **need* Quicklisp!
-(unless (find-package :quicklisp)
-  (format *error-output* "~&Please install Quicklisp! See the manual for instructions.~%"))
+;; We **need** Quicklisp!
+#-quicklisp
+(progn (load "quicklisp.lisp")
+       (handler-case (funcall (intern "INSTALL" :quicklisp-quickstart))
+         ;; This will break if setup.lisp hasn't been installed in the default
+         ;; spot (but then, how did we get here in the first place?!).
+         (simple-error () (let ((init (merge-pathnames "quicklisp/setup.lisp"
+                                                     (user-homedir-pathname))))
+                            (when (probe-file init)
+                              (load init))))))
 
 
 ;;; Packages
