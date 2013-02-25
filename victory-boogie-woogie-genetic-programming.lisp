@@ -29,6 +29,31 @@
 (defun calculate-n-nodes (tree) (declare (ignore tree)))
 
 
+;;; Globals
+
+(defparameter *functions*
+              '((:function +     :type integer :args (&rest integer))
+                (:function -     :type integer :args (&rest integer))
+                (:function *     :type integer :args (&rest integer))
+                (:function progn :type t       :args (&rest t))
+                ;; more progns!
+                (:function progn :type t       :args (&rest t))
+                (:function draw-filled-circle :type t
+                 :args ((terminal png) integer integer integer integer
+                        integer integer integer))))
+
+;; =foo= denotes external inputs
+(defparameter *terminals*
+              '((:terminal 0 :type integer) (:terminal 1 :type integer)
+                (:terminal 1 :type integer) (:terminal 2 :type integer)
+                (:terminal 3 :type integer) (:terminal 4 :type integer)
+                (:terminal 5 :type integer) (:terminal 6 :type integer)
+                (:terminal 7 :type integer) (:terminal 8 :type integer)
+                (:terminal 9 :type integer)
+                ;(:terminal (random255) :type integer)
+                (:terminal =png= :type png)))
+
+
 ;;; Classes
 
 (defclass program ()
@@ -79,7 +104,7 @@
 
 
 (defun create-program-full (functions terminals
-                            &key (fn-type t) (max-arity 4) (max-depth 4))
+                            &key (fn-type t) (max-arity 4) (max-depth 2))
   (let ((fn (random-elt (get-items-of-type functions fn-type))))
     (append (list (getf fn :function))
             (loop with args = (getf fn :args)
@@ -111,7 +136,7 @@
 
 
 (defun create-program-grow (functions terminals
-                            &key (fn-type t) (max-arity 4) (max-depth 4))
+                            &key (fn-type t) (max-arity 4) (max-depth 2))
   (let ((fn (random-elt (get-items-of-type functions fn-type))))
     (append (list (getf fn :function))
             (loop with args = (getf fn :args)
@@ -442,25 +467,9 @@
                                  (max-generations 32) (size 16)
                                  (type :ramped-half-half))
   (let* ((ref (read-png reference-path))
-         population
-         (functions '((:function +     :type integer :args (&rest integer))
-                      (:function -     :type integer :args (&rest integer))
-                      (:function *     :type integer :args (&rest integer))
-                      (:function progn :type t       :args (&rest t))
-                      ;; more progns!
-                      (:function progn :type t       :args (&rest t))
-                      (:function draw-filled-circle :type t
-                       :args ((terminal png) integer integer integer integer
-                              integer integer integer))))
-         ;; =foo= denotes external inputs
-         (terminals '((:terminal 0 :type integer) (:terminal 1 :type integer)
-                      (:terminal 1 :type integer) (:terminal 2 :type integer)
-                      (:terminal 3 :type integer) (:terminal 4 :type integer)
-                      (:terminal 5 :type integer) (:terminal 6 :type integer)
-                      (:terminal 7 :type integer) (:terminal 8 :type integer)
-                      (:terminal 9 :type integer)
-                      ;(:terminal (random255) :type integer)
-                      (:terminal =png= :type png))))
+         (functions *functions*)
+         (terminals *terminals*)
+         population)
     (setf population (create-population ref functions terminals :debug debug
                                       :max-arity max-arity :max-depth max-depth
                                       :size size :type type))
