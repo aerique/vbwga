@@ -5,21 +5,21 @@
 ;;;; <small><i>author: Erik Winkels ([aerique@xs4all.nl](mailto:aerique@xs4all.nl))  
 ;;;; version: v1.0</i></small>
 ;;;;
+;;;; **Note**: skip ahead to the "Creation" chapter if you're primarily
+;;;; interested in a description of the algorithm without all the extra
+;;;; fluff.
+;;;;
 ;;;; This is my first entry for the
 ;;;; [Victory Boogie Woogie contest](http://www.elegant.setup.nl/). It
 ;;;; tries to reproduce the painting using a reference picture and a
 ;;;; [genetic algorithm](https://en.wikipedia.org/wiki/Genetic_algorithm)
 ;;;; (GA).
 ;;;;
-;;;; **Note**: skip ahead to the "Creation" chapter if you're
-;;;; primarily interested in a description of the algorithm without
-;;;; all the extra fluff.
-;;;;
 ;;;; This approach is inspired by my earlier work (which has not been
 ;;;; released yet) to find a way to make graphical content for an iOS
 ;;;; game without the need for an artist: take photographs, run the GA
-;;;; over it and, voila: content in a consistent style!  This earlier work
-;;;; was in turn inspired by Roger Alsing's seminal blog about
+;;;; over it and, voila: content in a consistent style!  This earlier
+;;;; work was in turn inspired by Roger Alsing's seminal blog about
 ;;;; [reproducing the Mona Lisa using polygons](http://rogeralsing.com/2008/12/07/genetic-programming-evolution-of-mona-lisa/).
 ;;;; Although he calls it
 ;;;; "[genetic programming](https://en.wikipedia.org/wiki/Genetic_programming)"
@@ -34,19 +34,19 @@
 ;;;; [Pointillism](https://en.wikipedia.org/wiki/Pointillism) style used
 ;;;; by classical painters.
 ;;;;
-;;;; *Note*: The reference picture has been rotated 45 degrees
-;;;; clockwise! This has been done to make optimal use of the available
-;;;; space, since the algorithm is slow enough as it is. Once printed
-;;;; the result should be rotated 45 degrees anti-clockwise.
+;;;; Note: The reference picture has been rotated 45 degrees clockwise!
+;;;; This has been done to make optimal use of the available space,
+;;;; since the algorithm is slow enough as it is. Once printed the
+;;;; result should be rotated 45 degrees anti-clockwise.
 ;;;;
 ;;;; ## Installation & Running
 ;;;;
 ;;;; This program uses [SBCL](http://www.sbcl.org/) and
 ;;;; [Quicklisp](http://www.quicklisp.org/).
 ;;;;
-;;;; Depending on your machine it can take several hours to more than
-;;;; a day for a drawing to finish! For this reason representative
-;;;; output has been supplied with this contest entry as
+;;;; Depending on your machine it can take several hours to more than a
+;;;; day for a drawing to finish! For this reason representative output
+;;;; has been supplied with this contest entry as
 ;;;; [vbw-example.pdf](vbw-example.pdf), although no two results will
 ;;;; ever be the same.
 ;;;;
@@ -54,17 +54,19 @@
 ;;;; following format: "[X/Y] #&lt;DRAWING CIRCLES f=Z g=A&gt; size=B".
 ;;;;
 ;;;; - **X**: current generation,
-;;;; - **Y**: number of generations without any progress,
+;;;; - **Y**: number of generations without any progress since the
+;;;;          previous update,
 ;;;; - **Z**: fitness of the current best drawing,
 ;;;; - **A**: number of genes currently used,
 ;;;; - **B**: circle size.
 ;;;;
-;;;; By default the target fitness has been set to 3.0e-9 so whenever Z
-;;;; goes over that number the drawing is done and a `vbw.pdf` will be
-;;;; written to disk. Also, while the program is running a picture of
-;;;; the current progress will be saved every 1000 generations as
-;;;; `tmp.png`.  If you use a picture viewer that refreshes whenever
-;;;; `tmp.png` has changed you will have a live update of the progress.
+;;;; By default the target fitness has been set to 2.0e-9 so whenever Z
+;;;; goes over that number the drawing is done and a "vbw.pdf" file will
+;;;; be written to disk. Also, while the program is running a picture of
+;;;; the current progress will be saved every 256 generations as
+;;;; "tmp.png".  If you use a picture viewer that refreshes whenever the
+;;;; "tmp.png" file has changed you will have a live update of the
+;;;; progress.
 ;;;;
 ;;;; ### Unix (Linux, Ubuntu, etc.)
 ;;;;
@@ -73,13 +75,13 @@
 ;;;; 2. Unpack the archive and enter the directory it created;
 ;;;; 3. Run this program with: `./start-drawing.sh`;
 ;;;; 4. Wait... (the run can be aborted with Control-C);
-;;;; 5. Once finished the result will be saved to `vbw.pdf`.
+;;;; 5. Once finished the result will be saved to "vbw.pdf".
 ;;;;
 ;;;; It is possible to download and install an archive from
 ;;;; [http://www.sbcl.org/](http://www.sbcl.org/) but you will need to
-;;;; read to installation instructions carefully.  However, if you
-;;;; have installed SBCL like this and it can be run by just typing
-;;;; `sbcl` then issuing `./start-drawing.sh` should work.
+;;;; read to installation instructions carefully.  However, if you have
+;;;; installed SBCL like this and it can be run by just typing `sbcl` on
+;;;; the commandline then issuing `./start-drawing.sh` should work.
 ;;;;
 ;;;; ### OS X
 ;;;;
@@ -88,22 +90,23 @@
 ;;;; 3. Unpack the archive and enter the directory it created;
 ;;;; 4. Run this program with: `./start-drawing.sh`;
 ;;;; 5. Wait... (the run can be aborted with Control-C);
-;;;; 6. Once finished the result will be saved to `vbw.pdf`.
+;;;; 6. Once finished the result will be saved to "vbw.pdf".
 ;;;;
 ;;;; It is possible to download and install an archive from
 ;;;; [http://www.sbcl.org/](http://www.sbcl.org/) but you will need to
-;;;; read to installation instructions carefully.  However, if you
-;;;; have installed SBCL like this and it can be run by just typing
-;;;; `sbcl` then issuing `./start-drawing.sh` should work.
+;;;; read to installation instructions carefully.  However, if you have
+;;;; installed SBCL like this and it can be run by just typing `sbcl` on
+;;;; the commandline then issuing `./start-drawing.sh` should work.
 ;;;;
 ;;;; ### Windows
 ;;;;
 ;;;; 1. Install SBCL (x86) from: [http://www.sbcl.org/platform-table.html](http://www.sbcl.org/platform-table.html)
-;;;;    (just accept all defaults when going through the dialogs).
-;;;; 2. Unpack the archive and enter the directory it created;
-;;;; 3. Run this program by double-clicking `./start-drawing.bat`;
-;;;; 4. Wait... (the run can be aborted with Control-C);
-;;;; 5. Once finished the result will be saved to `vbw.pdf`.
+;;;;    (just accept all defaults when going through the dialogs);
+;;;; 2. Maybe reboot;
+;;;; 3. Unpack the archive and enter the directory it created;
+;;;; 4. Run this program by double-clicking `./start-drawing.bat`;
+;;;; 5. Wait... (the run can be aborted with Control-C);
+;;;; 6. Once finished the result will be saved to "vbw.pdf".
 
 ;;; ## Initialization
 
@@ -169,7 +172,7 @@
 (defparameter +max-rgba+ 255)
 
 
-;;; ## Class: DRAWING
+;;; ## Class: `drawing`
 ;;;
 ;;; This class combines all the data needed for a drawing in one neat
 ;;; package:
@@ -180,10 +183,10 @@
 ;; - **background** : the background as a ZPNG object (for speed, so it
 ;;                    has not to be drawn again every generation);
 ;; - **fitness** : this instance's fitness, the higher the better;
-;; - **png** : bg-genome + genome drawn as a ZPNG object, this is used
-;;             to calculate the fitness against the reference picture
-;;             (what really happens is `background` is copied and
-;;             `genome` is drawn on that);
+;; - **png** : `bg-genome` + `genome` drawn as a ZPNG object, this is
+;;             used to calculate the fitness against the reference
+;;             picture (what really happens is `background` is copied
+;;             and `genome` is drawn on that);
 ;; - **width** : the reference PNG's width;
 ;; - **height** : the reference PNG's height.
 ;;
@@ -200,9 +203,9 @@
    (height     :reader   height     :initarg :height)))
 
 
-;; Since the default printed representation of DRAWING contains too
-;; little information new PRINT-OBJECT method is defines with different
-;; output:
+;; Since the default printed representation of `drawing` contains too
+;; little information new `print-object` method is defined with
+;; different output:
 (defmethod print-object ((obj drawing) stream)
   (print-unreadable-object (obj stream :type t)
     (format stream "f=~,5E g=~D" (fitness obj) (length (genome obj)))))
@@ -236,7 +239,7 @@
 
 
 ;; These genes are then wrapped up in a genome which is a container for
-;; genes.  This genome makes up the top layer of the drawing, the layer
+;; genes.  This genome makes up the top layer of the drawing: the layer
 ;; currently being evolved.
 (defun create-random-genome (reference &optional (length 16) (size 16))
   "Creates a genome of size LENGTH.  SIZE is passed on to the
@@ -251,7 +254,7 @@
         finally (return arr)))
 
 
-;; Since the DRAWING class is used as a container for all the data
+;; Since the `drawing` class is used as a container for all the data
 ;; pertaining to a drawing higher level functions are needed to make the
 ;; program easier to read (and use while working on it).
 (defun make-drawing (reference background genome bg-genome)
@@ -274,15 +277,15 @@
 ;;; The initial generated drawing is random.  This drawing is improved
 ;;; by randomly moving around circles and changing their colors and
 ;;; transparency.  Whenever the result of these random operations is
-;;; better than the current best drawing it becomes the new best
-;;; drawing and will serve as the foundation for further operations.
+;;; better than the current best drawing it becomes the new best drawing
+;;; and will serve as the foundation for further operations.
 
 ;; `evolve-gene` is the most basic evolution function for this program.
 ;; It evolves a single gene (see `create-random-gene`) by randomly
 ;; calling a modification function on it.  Observe that 90% of the time
-;; one of those functions is called with a default DELTA and 10% of the
-;; time one of those functions is called with an excessive DELTA ten
-;; times as large as the default.  This is to avoid getting stuck on
+;; one of those functions is called with a default `delta` and 10% of
+;; the time one of those functions is called with an excessive `delta`
+;; ten times as large as the default.  This is to avoid getting stuck on
 ;; local maxima.
 (defun evolve-gene (reference gene &optional delta)
   "Evolves a GENE by calling either MODIFY-COLOR or MODIFY-POSITION on it.
@@ -298,11 +301,11 @@
 
 
 ;; During development it was settled upon to change four genes per
-;; generation.  There is no specific reason.  Initially it was one
-;; gene per generation but the drawing evolved too slow, so it was
-;; arbitrarily set to four which worked well enough.  It was never
-;; again looked at due to other issues being more pressing.  Note that
-;; it is possible for the same gene to be selected multiple times,
+;; generation.  There is no specific reason.  Initially it was one gene
+;; per generation but the drawing evolved too slow, so it was
+;; arbitrarily set to four which worked well enough.  It was never again
+;; looked at due to other issues being more pressing.  Note that it is
+;; possible for the same gene to be selected multiple times,
 ;; i.e. there's no list kept of previously selected genes.
 (defun evolve-genome (reference genome)
   "Returns a copy of GENOME with modified genes (also copies).
@@ -316,9 +319,9 @@
         finally (return new-genome)))
 
 
-;; Again, a higher level function is needed for working with the DRAWING
-;; class.  If this is not done a lot of code will be repeated in the
-;; program (look for the calls to `evolve-drawing`).
+;; Again, a higher level function is needed for working with the
+;; `drawing` class.  If this is not done a lot of code will be repeated
+;; in the program (look for the calls to `evolve-drawing`).
 (defun evolve-drawing (reference drawing)
   (let ((new-genome (evolve-genome reference (genome drawing))))
     (make-drawing reference (background drawing) new-genome
@@ -394,9 +397,9 @@
 ;; PNG and that PNG's fitness is calculated by comparing it against the
 ;; reference picture.  This is done by comparing the red, green and blue
 ;; components of each pixel against those of the reference picture and
-;; summing up the differences.  Finally `1` is divided by `sum + 1` (+1
-;; to avoid division by zero) so the values for good to bad fitness go
-;; from one to zero.
+;; summing up the differences.  Finally 1 is divided by "sum + 1" (+1 to
+;; avoid division by zero) so the values for good to bad fitness go from
+;; one to zero.
 (defun calculate-fitness (reference png)
   "Calculates the fitness of PNG and returns a value from 1.0 (good) to
   0.0 (bad).  Both REFERENCE and PNG should be ZPNG objects."
@@ -536,10 +539,10 @@
 ;;;
 ;;; These functions read and write PNG files.  The PNG-READ package is
 ;;; (obviously) used for reading PNGs and the ZPNG package is used for
-;;; the internal representation and for writing PNG files.  For most
-;;; of the development time it was planned to use a huge PNG file for
-;;; the final result.  After asking some questions to the organization
-;;; it became apparent that a PDF would be better suited for printing.
+;;; the internal representation and for writing PNG files.  For most of
+;;; the development time it was planned to use a huge PNG file for the
+;;; final result.  After asking some questions to the organization it
+;;; became apparent that a PDF would be better suited for printing.
 ;;;
 ;;; PNGs are still used for the reference pictures and for writing out
 ;;; the intermediate results of the evolution.  It might very well be
@@ -584,7 +587,7 @@
 
 ;; During development it became clear that outputting to PDF instead of
 ;; a giant PNG was to be preferred.  `resolution-independent-drawing`
-;; converts a DRAWING instance aimed at producing PNGs into a new
+;; converts a `drawing` instance aimed at producing PNGs into a new
 ;; instance that is not tied to a specific resolution.  This new
 ;; instance can then be used to produce a PDF.
 (defun resolution-independent-drawing (drawing)
@@ -663,26 +666,25 @@
 ;;
 ;; - `sbcl --load victory-boogie-woogie-genetic-algorithm.lisp`
 ;;
-;; On the REPL go into the `VBW` package with `(in-package :vbw)` and
+;; On the REPL go into the `vbw` package with `(in-package :vbw)` and
 ;; issue for example:
 ;;
 ;; - `(main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :genome-length 4 :min-size 2 :max-dgen 256 :target-fitness 3e-10)`
 ;;
 ;; The settings that have the most influence are:
 ;;
-;; - *max-dgen* : the lower this value the quicker the program will
-;;                decrease the circle size and increase the number of
-;;                genes in the genome;
-;; - *target-fitness*: the higher the target fitness the more of an
-;;                     exact copy of the reference picture will be made
-;;                     (by setting this too high the evolution might
-;;                     never finish!).
+;; - **max-dgen** : the lower this value the quicker the program will
+;;                  decrease the circle size and increase the number of
+;;                  genes in the genome;
+;; - **target-fitness**: the higher the target fitness the more of an
+;;                       exact copy of the reference picture will be
+;;                       made (by setting this too high the evolution
+;;                       might never finish!).
 ;;
 ;; By reading this function from top to bottom you should get a good
 ;; impression of the high level functioning of this program.
 (defun main (reference-path &key (genome-length 4) (min-size 2) (size 512)
-                                 ;(target-fitness 1e-9) (max-dgen 448)
-                                 (target-fitness 3e-9) (max-dgen 384)
+                                 (target-fitness 2e-9) (max-dgen 448)
                                  (png-out-path "tmp.png"))
   (let* ((*random-state* (make-random-state t))
          (ref (read-png reference-path))
@@ -724,7 +726,7 @@
                      drw              (evolve-drawing ref drw))
                (format t "*** Switching to genome-length=~D and size=~D.~%"
                        genome-length size))
-             (when (= 0 (mod gen 1000))
+             (when (= 0 (mod gen 256))
                (save-drawing drw png-out-path)))
     (save-drawing drw png-out-path)
     drw))
