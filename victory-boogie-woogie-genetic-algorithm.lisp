@@ -2,8 +2,8 @@
 ;;;;-
 ;;;; # VBWGA
 ;;;;
-;;;; <small><i>author: Erik Winkels ([aerique@xs4all.nl](mailto:aerique@xs4all.nl))  
-;;;; version: v1.0</i></small>
+;;;; <small><i>author: Erik Winkels ([aerique@xs4all.nl](mailto:aerique@xs4all.nl), [http://www.aerique.net/](http://www.aerique.net), [@aerique](https://twitter.com/aerique))  
+;;;; version: v1.1</i></small>
 ;;;;
 ;;;; **Note**: skip ahead to the "Creation" chapter if you're primarily
 ;;;; interested in a description of the algorithm without all the extra
@@ -122,6 +122,7 @@
 ;; without any issues as well.
 ;;
 ;; This approach should be good enough:
+#-quicklisp
 (progn (load "quicklisp.lisp")
        (handler-case (funcall (intern "INSTALL" :quicklisp-quickstart))
          ;; This will break if setup.lisp hasn't been installed in the default
@@ -132,7 +133,6 @@
                                 (load init)
                                 (format *error-output* "~&Could not install ~
                                         Quicklisp, aborting...~%"))))))
-#-quicklisp
 
 ;;; ### Packages
 ;;;
@@ -671,6 +671,10 @@
 ;;
 ;; - `(main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :genome-length 4 :min-size 2 :max-dgen 256 :target-fitness 3e-10)`
 ;;
+;; For "vbw-example.pdf" the following command was used:
+;;
+;; - `(main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png" :genome-length 4 :min-size 2 :max-dgen 448 :target-fitness 2e-9)`
+;;
 ;; The settings that have the most influence are:
 ;;
 ;; - **max-dgen** : the lower this value the quicker the program will
@@ -684,7 +688,7 @@
 ;; By reading this function from top to bottom you should get a good
 ;; impression of the high level functioning of this program.
 (defun main (reference-path &key (genome-length 4) (min-size 2) (size 512)
-                                 (target-fitness 2e-9) (max-dgen 448)
+                                 (target-fitness 1e-9) (max-dgen 384)
                                  (png-out-path "tmp.png"))
   (let* ((*random-state* (make-random-state t))
          (ref (read-png reference-path))
@@ -730,6 +734,16 @@
                (save-drawing drw png-out-path)))
     (save-drawing drw png-out-path)
     drw))
+
+
+;; When making a binary using `sb-ext:save-lisp-and-die` we need to
+;; supply a top level function for it to start at.
+(defun toplevel-for-exe ()
+  (write-pdf
+    (resolution-independent-drawing
+      (vbw::main "reference-pictures/victory-boogie-woogie-marie-ll-flickr-512x512-rotated-45.png"))
+    "vbw.pdf")
+  (quit))
 
 
 ;;;; ## An Attempt at Literary Programming
