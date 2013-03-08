@@ -3,6 +3,7 @@
 ;;;; The painting has been turned 45 degrees clockwise!
 ;;;;
 ;;;; - use SUBTYPEP to check for subtypes, f.e. (subtypep 'integer 'number)
+;;;; - a :size about 1/2 to 1/4 of :max-generations seem to be ok
 
 ;;; Packages
 
@@ -12,10 +13,8 @@
 (asdf:oos 'asdf:load-op :png-read)
 (asdf:oos 'asdf:load-op :zpng)
 
-;(push (merge-pathnames "3rd-party/baby-steps/" *default-pathname-defaults*)
-;  asdf:*central-registry*)
-;(asdf:oos 'asdf:load-op :baby-steps)
-
+(asdf:oos 'asdf:load-op :eager-future2)
+(rename-package :eager-future2 :eager-future2 '(:ef))
 
 (defpackage :victory-boogie-woogie
   (:nicknames :vbw)
@@ -32,26 +31,35 @@
 ;;; Globals
 
 (defparameter *functions*
-              '((:function +     :type integer :args (&rest integer))
-                (:function -     :type integer :args (&rest integer))
-                (:function *     :type integer :args (&rest integer))
-                (:function progn :type t       :args (&rest t))
-                ;; more progns!
-                (:function progn :type t       :args (&rest t))
-                (:function draw-filled-circle :type t
+              '((:function +        :type integer :args (&rest integer))
+                (:function -        :type integer :args (&rest integer))
+                (:function *        :type integer :args (&rest integer))
+                (:function progn    :type progn   :args (&rest drawfn))
+                (:function progn    :type drawfn  :args (&rest drawfn))
+                (:function progn    :type t       :args (&rest drawfn))
+                ;(:function progn    :type t       :args (t t t t t t t t t t))
+                (:function repeater :type t       :args (integer integer t))
+                (:function draw-line :type drawfn
+                 :args ((terminal png) integer integer integer integer
+                        integer integer integer integer))
+                (:function draw-filled-circle :type drawfn
+                 :args ((terminal png) integer integer integer integer
+                        integer integer integer))
+                (:function draw-filled-square :type drawfn
                  :args ((terminal png) integer integer integer integer
                         integer integer integer))))
 
 ;; =foo= denotes external inputs
 (defparameter *terminals*
-              '((:terminal 0 :type integer) (:terminal 1 :type integer)
-                (:terminal 1 :type integer) (:terminal 2 :type integer)
-                (:terminal 3 :type integer) (:terminal 4 :type integer)
-                (:terminal 5 :type integer) (:terminal 6 :type integer)
-                (:terminal 7 :type integer) (:terminal 8 :type integer)
-                (:terminal 9 :type integer)
-                ;(:terminal (random255) :type integer)
+              '(;; ":eval t" means the result of #'random255 should be placed
+                ;; in the tree, not #'random255 itself
+                (:terminal (random255) :type integer :eval t)
+                (:terminal (random511) :type integer :eval t)
+                ;; 'free' variables, default to 1... see make-function
+                (:terminal =a= :type integer) (:terminal =b= :type integer)
                 (:terminal =png= :type png)))
+
+(defparameter *population* nil)
 
 
 ;;; Classes
@@ -85,8 +93,9 @@
       (elt sequence (random length)))))
 
 
-(defun calculate-fitness (reference png)
+(defun calculate-fitness (reference png tree)
   "Both REFERENCE and PNG are ZPNG objects."
+  (declare (ignore tree))
   (when (or (not (= (zpng:width reference) (zpng:width png)))
             (not (= (zpng:height reference) (zpng:height png))))
     (error "dimensions of REFERENCE (~Dx~D) and PNG (~Dx~D) not equal"
@@ -132,7 +141,10 @@
                                                     :fn-type item-type
                                                     :max-arity max-arity
                                                     :max-depth (- max-depth 1))
-                                (getf item :terminal)))))))
+                                ;(getf item :terminal)))))))
+                                (if (getf item :eval)
+                                    (eval (getf item :terminal))
+                                    (getf item :terminal))))))))
 
 
 (defun create-program-grow (functions terminals
@@ -163,7 +175,10 @@
                                                     :fn-type item-type
                                                     :max-arity max-arity
                                                     :max-depth (- max-depth 1))
-                                (getf item :terminal)))))))
+                                ;(getf item :terminal)))))))
+                                (if (getf item :eval)
+                                    (eval (getf item :terminal))
+                                    (getf item :terminal))))))))
 
 
 (defun create-program (functions terminals
@@ -183,9 +198,9 @@
 
 
 (defun make-function (body)
-  (let (;; supress compilation warnings and errors
+  (let (;; suppress compilation warnings and errors
         (*error-output* (make-broadcast-stream)))  ; thanks stassats!
-    (eval (append '(lambda (=png=)) (list body)))))
+    (eval (append '(lambda (=png= &optional (=a= 1) (=b= 1))) (list body)))))
 
 
 (defun run-program (reference body)
@@ -194,12 +209,13 @@
                   ;; seems to be on bignums / big calculations or something
                   ;; not sure if it is a hang or extreme slowness
                   ;(cl-user::with-timeout 3 (funcall (make-function body) png))
-                  (cl-user::with-timeout 0.1
+                  ;(cl-user::with-timeout 0.1
+                  (cl-user::with-timeout 0.5
                     (funcall (make-function body) png))
       (error () (return-from run-program nil))
       (sb-ext:timeout ()
-        (return-from run-program nil)))
         ;(break "Timeout occured")))
+        (return-from run-program nil)))
     png))
 
 
@@ -230,7 +246,7 @@
                                       type)))
         for png = (run-program reference program)
         for fitness = (if png
-                          (calculate-fitness reference png)
+                          (calculate-fitness reference png program)
                           nil)
         do (when fitness
              (let ((obj (make-instance 'program :fitness fitness
@@ -323,9 +339,54 @@
         do (draw-horizontal-line png (- x width/2) (+ x width/2) y0 r g b a)))
 
 
+;; Hehe, grabbed this from my own CL-SDL check-in on SourceForge from 2002.
+(defun draw-line (png x1 y1 x2 y2 r g b &optional (a 255))
+  (when (or (< x1 0) (>= x1 (zpng:width png))
+            (< y1 0) (>= y1 (zpng:height png))
+            (< x2 0) (>= x2 (zpng:width png))
+            (< y2 0) (>= y2 (zpng:height png)))
+    (return-from draw-line))
+  (let* ((dx (abs (- x1 x2)))
+         (dy (abs (- y1 y2)))
+         (cx dx)
+         (cy dy)
+         (xi (if (> x2 x1) 1 -1))
+         (yi (if (> y2 y1) 1 -1)))
+    (if (> dx dy)
+        ;; apparently I had not discovered LOOP yet, or I was in some stupid
+        ;; must-not-use-loop-unpure mindset
+        (dotimes (condom dx) ; condom is not used
+          (when (> cy cx)
+            (incf cx dx)
+            (incf y1 yi))
+          ;(put-pixel x1 y1 color)
+          (set-pixel-unsafe png x1 y1 r g b a)
+          (incf x1 xi)
+          (incf cy dy))
+        (dotimes (toothbrush dy) ; toothbrush is not used
+          (when (> cx cy)
+            (incf cy dy)
+            (incf x1 xi))
+          ;(put-pixel x1 y1 color)
+          (set-pixel-unsafe png x1 y1 r g b a)
+          (incf y1 yi)
+          (incf cx dx)))))
+
+
 (defun random255 ()
   "Returns an integer between 0 and 255 (inclusive)."
   (random 256))
+
+
+(defun random511 ()
+  "Returns an integer between 0 and 511 (inclusive)."
+  (random 512))
+
+
+(defun repeater (=a= =b= body)
+    (loop for x from 0 to =a=
+          for y from 0 to =b=
+          do (progn body)))
 
 
 (defun read-png (path)
@@ -346,7 +407,8 @@
 
 (defun write-png (png &optional (path "tmp.png"))
   "Writes a ZPNG object to PATH."
-  (zpng:write-png png path))
+  (when png
+    (zpng:write-png png path)))
 
 
 (defun calculate-n-nodes (tree)
@@ -452,7 +514,7 @@
     (loop for tree in trees
           for png = (run-program reference tree)
           for fitness = (if png
-                            (calculate-fitness reference png)
+                            (calculate-fitness reference png tree)
                             0)
           do (vector-push-extend (make-instance 'program :fitness fitness
                                                 :tree tree)
@@ -461,22 +523,57 @@
             0 (length population))))
 
 
+(defun draw-program (reference program &optional (path "tmp.png"))
+  (write-png (run-program reference (tree program)) path))
+
+
 ;;; Main Program
 
-(defun main (reference-path &key (debug nil) (max-arity 4) (max-depth 2)
-                                 (max-generations 32) (size 16)
-                                 (type :ramped-half-half))
-  (let* ((ref (read-png reference-path))
+(defun main (reference-path &key (debug nil) (max-arity 5) (max-depth 2)
+                                 (max-dgen 384) (size 256)
+                                 (type :ramped-half-half)
+                                 (target-fitness 1.0e-9)
+                                 (png-out-path "tmp.png"))
+  (let* ((*random-state* (make-random-state t))
+         (ref (read-png reference-path))
          (functions *functions*)
          (terminals *terminals*)
          population)
     (setf population (create-population ref functions terminals :debug debug
                                       :max-arity max-arity :max-depth max-depth
                                       :size size :type type))
-    (loop repeat max-generations
+    (loop with best-program = (make-instance 'program :fitness 0 :tree nil)
+          with dgen = 0
+          ;repeat max-generations
+          until (> (fitness best-program) target-fitness)
           for i from 1
           for new-population = (evolve-population ref population functions
                                                   terminals)
-          do (format t "[~D] ~S~%" i (elt new-population 0))
-             (setf population new-population))
-    population))
+          for best-new = (elt new-population 0)
+          do (when (> (fitness best-new) (fitness best-program))
+               (draw-program ref best-new png-out-path)
+               (format t "[~8D/~3D] ~S~%" i dgen best-new)
+               (setf best-program best-new
+                     dgen         0))
+             (setf population new-population)
+             (incf dgen)
+             (when (> dgen max-dgen)
+               ;; reinitialize population but keep best program
+               (format t "*** dgen > ~D, reinitializing population...~%"
+                       max-dgen)
+               (format t "[~8D/~3D] ~S~%" i dgen (elt population 0))
+               (setf population (create-population ref functions terminals
+                                  :debug debug :max-arity max-arity
+                                  :max-depth max-depth :size size :type type))
+               (setf population
+                     (sort population (lambda (a b)
+                                        (> (fitness a) (fitness b)))))
+               (setf (elt population (- (length population) 1)) best-program)
+               (setf population
+                     (sort population (lambda (a b)
+                                        (> (fitness a) (fitness b)))))
+               (format t "[~8D/~3D] ~S~%" i dgen (elt population 0))
+               (setf dgen 0)
+               (format t "*** done.~%")))
+    (setf *population* population)
+    (elt population 0)))
