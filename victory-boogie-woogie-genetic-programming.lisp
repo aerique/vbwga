@@ -1,5 +1,9 @@
 ;;;; victory-boogie-woogie-genetic-programming.lisp
 ;;;;
+;;;; This was supposed to become my second entry for the competition but
+;;;; the current approach doesn't work.  It needs a big rework and I might
+;;;; continue with it for fun in the future.
+;;;;
 ;;;; The painting has been turned 45 degrees clockwise!
 ;;;;
 ;;;; - use SUBTYPEP to check for subtypes, f.e. (subtypep 'integer 'number)
