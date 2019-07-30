@@ -1,3 +1,7 @@
+The canonical home page for this project is: https://git.sr.ht/~aerique/vbwga
+
+(The library is also pushed to GitLab and GitHub but those sites are not monitored for support.)
+
 # VBWGA
 
 <small><i>author: Erik Winkels ([aerique@xs4all.nl](mailto:aerique@xs4all.nl), [http://www.aerique.net/](http://www.aerique.net), [@aerique](https://twitter.com/aerique))  
